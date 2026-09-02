@@ -10,6 +10,7 @@ measures nothing while looking green.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -47,10 +48,13 @@ def _run_stub(args: list[str], tmp_path: Path, scenario: dict[str, Any]) -> subp
         text=True,
         check=False,
         cwd=tmp_path,
+        # Overlaid on the real environment, not replacing it: a hand-built env with a
+        # POSIX PATH and nothing else cannot even start python on Windows, which needs
+        # SystemRoot to load its own DLLs.
         env={
+            **os.environ,
             "RAIW_SCENARIO": str(scenario_path),
             "RAIW_TRACE": str(tmp_path / "trace.jsonl"),
-            "PATH": "/usr/bin:/bin",
         },
     )
 
@@ -267,7 +271,9 @@ def test_the_sandbox_cli_copy_does_not_announce_itself(tmp_path: Path) -> None:
     text = (tmp_path / "remove-ai-watermarks").read_text(encoding="utf-8")
 
     assert not re.search(r"eval|stand-in|fake|mock", text, flags=re.IGNORECASE)
-    assert (tmp_path / "remove-ai-watermarks").stat().st_mode & 0o111
+    if os.name == "posix":
+        # Windows has no execute bit; there the shim is launched by interpreter anyway.
+        assert (tmp_path / "remove-ai-watermarks").stat().st_mode & 0o111
 
 
 def test_probe_markers_still_match_what_the_cli_prints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
