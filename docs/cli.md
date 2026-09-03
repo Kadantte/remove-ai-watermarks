@@ -151,7 +151,14 @@ The default behavior:
 - removes every detected match, except the weakly detected Jimeng label pill,
   which needs corroboration (see [supported signals](supported-signals.md));
 - selects the best installed fill backend;
+- checks the filled region once without changing it or retrying the fill;
 - strips AI metadata from the output.
+
+The automatic command reports `Removed and validated` when the detector no
+longer accepts an overlapping mark, `Partial` when an overlapping residual is
+still detected, and `Post-removal validation unavailable` when the check fails.
+The latter two still write the once-filled output and return success; they are
+result-quality statuses, not requests for an automatic second edit.
 
 Use a specific mark:
 

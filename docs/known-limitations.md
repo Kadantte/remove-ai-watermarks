@@ -36,6 +36,20 @@ have to be reconstructed.
 No backend can recover detail that is completely hidden by an opaque mark. A
 successful detection therefore does not guarantee a visually perfect fill.
 
+### Post-fill validation is not a visual-quality oracle
+
+Automatic visible removal checks each result once with the same detector and
+reports `cleaned`, `partial`, or `unvalidated`. `partial` means an accepted
+detection still overlaps the region that was filled. This can catch a residual,
+but it cannot prove that reconstructed texture, text, or structure looks natural:
+the validator measures mark evidence, not perceptual quality, and it is not
+independent from the detector that selected the mark.
+
+The check is deliberately read-only. It does not enlarge the mask or trigger a
+second fill. Mask quality and backend choice must be improved before the single
+fill; a post-fill retry can compound blur or invented detail without removing
+the detector signal.
+
 ### Automatic detection covers registered variants only
 
 The registry contains vendor and locale specific templates. A redesigned mark,

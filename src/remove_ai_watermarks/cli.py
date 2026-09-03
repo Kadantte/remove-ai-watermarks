@@ -574,7 +574,7 @@ def _run_visible_auto(
     t0 = time.monotonic()
     try:
         with console.status("Detecting & removing visible marks..."):
-            result, removed = api.remove_visible(
+            report = api.remove_visible_detailed(
                 str(source),
                 str(output),
                 sensitivity=sensitivity,
@@ -593,13 +593,25 @@ def _run_visible_auto(
         raise SystemExit(1) from e
 
     elapsed = time.monotonic() - t0
+    result, removed = report.image, report.labels
     h, w = result.shape[:2]
     console.print(f"  Input:  {source.name}  ({w}x{h})")
     if not removed:
         # write_noop=False means nothing was written, so a pre-existing output is intact.
         console.print(f"  No known visible mark detected. Checked: {', '.join(watermark_registry.mark_keys())}.")
         _no_visible_mark_exit(source)
-    console.print(f"  Removed: {', '.join(removed)}")
+    if report.status == "partial":
+        residuals = [mark.label for mark in report.marks if mark.status == "partial"]
+        console.print(
+            f"  Partial: fill completed for {', '.join(removed)}; "
+            f"overlapping residual still detected for {', '.join(residuals)}."
+        )
+    elif report.status == "unvalidated":
+        unavailable = [mark.label for mark in report.marks if mark.status == "unvalidated"]
+        console.print(f"  Filled: {', '.join(removed)}")
+        console.print(f"  Post-removal validation unavailable for: {', '.join(unavailable)}.")
+    else:
+        console.print(f"  Removed and validated: {', '.join(removed)}")
     size_kb = output.stat().st_size / 1024
     console.print(f"  Saved: {output}  ({size_kb:.0f} KB, {elapsed:.2f}s)")
 

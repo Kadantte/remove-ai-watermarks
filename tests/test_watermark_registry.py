@@ -185,6 +185,121 @@ class TestFill:
         assert np.array_equal(out, img)
 
 
+class TestPostRemovalValidation:
+    """A post-check reports the first fill; it never edits the image again."""
+
+    @staticmethod
+    def _install_single_mark(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        residual: bool,
+        residual_region: reg.Region = (3, 3, 2, 2),
+        validation_error: bool = False,
+    ) -> dict[str, int]:
+        calls = {"scan": 0, "fill": 0, "mask": 0}
+        before = reg.MarkDetection("test", "Test mark", "top-left", True, 0.9, (2, 2, 4, 4))
+        after = reg.MarkDetection("test", "Test mark", "top-left", residual, 0.7, residual_region)
+
+        def detect_both(_image):
+            calls["scan"] += 1
+            return before, before
+
+        def detect_after(_image, *, provenance=False):
+            del provenance
+            calls["scan"] += 1
+            if validation_error:
+                raise RuntimeError("validator failed")
+            return after
+
+        def mask(_image, *, force=False, detection=None):
+            del force
+            calls["mask"] += 1
+            # The perception result must reach the mask builder. Calling `_detect`
+            # again before the fill would discard the optimization that pays for the
+            # post-removal check.
+            assert detection is before
+            result = np.zeros((10, 10), np.uint8)
+            result[2:6, 2:6] = 255
+            return result
+
+        mark = reg.KnownMark(
+            key="test",
+            label="Test mark",
+            location="top-left",
+            in_auto=True,
+            product="test",
+            label_regime=None,
+            platform="Test",
+            _detect=detect_after,
+            _mask=mask,
+            _detect_both=detect_both,
+        )
+
+        def fill(image, selected_mask, *, backend="auto"):
+            del backend
+            calls["fill"] += 1
+            result = image.copy()
+            result[selected_mask > 0] = 123
+            return result
+
+        monkeypatch.setattr(reg, "_REGISTRY", (mark,))
+        monkeypatch.setattr(reg, "_PRODUCT_OF", {"test": "test"})
+        monkeypatch.setattr(reg, "fill", fill)
+        return calls
+
+    def test_cleaned_result_reuses_detection_and_fills_once(self, monkeypatch: pytest.MonkeyPatch):
+        calls = self._install_single_mark(monkeypatch, residual=False)
+
+        report = reg.remove_auto_marks_detailed(np.zeros((10, 10, 3), np.uint8), backend="cv2")
+
+        assert report.status == "cleaned"
+        assert report.labels == ["Test mark"]
+        assert report.marks[0].status == "cleaned"
+        assert report.marks[0].mask_bbox == (2, 2, 4, 4)
+        assert report.marks[0].confidence_before == 0.9
+        assert report.marks[0].confidence_after == 0.7
+        assert report.marks[0].residual_region is None
+        assert calls == {"scan": 2, "fill": 1, "mask": 1}
+
+    def test_overlapping_residual_is_partial_without_retry(self, monkeypatch: pytest.MonkeyPatch):
+        calls = self._install_single_mark(monkeypatch, residual=True)
+
+        report = reg.remove_auto_marks_detailed(np.zeros((10, 10, 3), np.uint8), backend="cv2")
+
+        assert report.status == "partial"
+        assert report.marks[0].status == "partial"
+        assert report.marks[0].residual_region == (3, 3, 2, 2)
+        assert calls["fill"] == 1
+
+    def test_nonoverlapping_detection_is_not_this_removals_residual(self, monkeypatch: pytest.MonkeyPatch):
+        self._install_single_mark(monkeypatch, residual=True, residual_region=(8, 8, 2, 2))
+
+        report = reg.remove_auto_marks_detailed(np.zeros((10, 10, 3), np.uint8), backend="cv2")
+
+        assert report.status == "cleaned"
+        assert report.marks[0].residual_region is None
+
+    def test_validator_failure_is_not_reported_as_cleaned(self, monkeypatch: pytest.MonkeyPatch):
+        calls = self._install_single_mark(monkeypatch, residual=False, validation_error=True)
+
+        report = reg.remove_auto_marks_detailed(np.zeros((10, 10, 3), np.uint8), backend="cv2")
+
+        assert report.status == "unvalidated"
+        assert report.marks[0].status == "unvalidated"
+        assert report.marks[0].confidence_after is None
+        assert calls["fill"] == 1
+
+    def test_no_decision_is_no_watermark(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(reg, "_REGISTRY", ())
+        monkeypatch.setattr(reg, "_PRODUCT_OF", {})
+
+        report = reg.remove_auto_marks_detailed(np.zeros((10, 10, 3), np.uint8), backend="cv2")
+
+        assert report.status == "no_watermark"
+        assert report.labels == []
+        assert report.marks == ()
+
+
 class TestProvenanceGate:
     """The Gemini trust gate relaxes from GEMINI_SPARKLE_TRUST_CONF to
     _GEMINI_PROVENANCE_MIN_CONF when provenance confirms Google; tested

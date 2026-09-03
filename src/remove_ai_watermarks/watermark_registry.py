@@ -5,10 +5,11 @@ A single catalog that ties each known visible mark to (a) where it usually sits,
 registry detects every known mark in its usual place and removes the ones
 present.
 
-**Localize -> fill.** A known mark is removed by LOCALIZING it (a version-robust
+**Localize -> fill -> validate.** A known mark is removed by LOCALIZING it (a version-robust
 detector that returns a binary footprint MASK) and then handing
 that mask to ONE shared, swappable fill backend (``region_eraser``: cv2 Telea/NS,
-MI-GAN, or big-LaMa). No mark carries a reverse-alpha step any more: the old
+MI-GAN, or big-LaMa). The same detector then checks the result without changing
+the mask or running a second fill. No mark carries a reverse-alpha step any more: the old
 ``original = (wm - a*logo)/(1-a)`` recovery depended on a fixed captured alpha map
 at a fixed position, broke whenever a vendor re-rendered or moved its mark, and was
 not color-lossless even with the right map (it amplifies quantization/JPEG-chroma
@@ -199,6 +200,13 @@ class Candidate:
     detected_strict: bool
     detected_relaxed: bool
     features: dict[str, float]  # generic; both construction sites always supply it (empty when none)
+    # Retain the exact perception outputs for the action stage. The first selected
+    # mark is still being localized on the unchanged input, so throwing these away
+    # and re-detecting it paid for a duplicate scan. Reusing that scan makes room for
+    # the read-only post-removal validation without adding another detector pass to
+    # the common one-mark path. Optional for policy-only Candidates in tests.
+    strict_detection: MarkDetection | None = field(default=None, compare=False, repr=False)
+    relaxed_detection: MarkDetection | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -209,6 +217,55 @@ class Decision:
 
     candidate: Candidate
     relax: bool
+
+
+VisibleRemovalStatus = Literal["no_watermark", "cleaned", "partial", "unvalidated"]
+MarkValidationStatus = Literal["cleaned", "partial", "unvalidated"]
+
+
+@dataclass(frozen=True)
+class MarkRemovalResult:
+    """One visible-mark fill and its read-only post-removal validation.
+
+    ``partial`` means the same detector still accepts an overlapping region after
+    the one fill. It is useful evidence about this engine, not an independent oracle.
+    Validation never expands the mask and never runs a second fill.
+    """
+
+    key: str
+    label: str
+    location: str
+    region: Region
+    mask_bbox: Region
+    backend: Literal["cv2", "migan", "lama"]
+    confidence_before: float
+    confidence_after: float | None
+    status: MarkValidationStatus
+    residual_region: Region | None = None
+
+
+@dataclass(frozen=True)
+class VisibleRemovalResult:
+    """Detailed result of one automatic visible-mark pass."""
+
+    image: NDArray[Any] = field(compare=False, repr=False)
+    marks: tuple[MarkRemovalResult, ...]
+
+    @property
+    def labels(self) -> list[str]:
+        """Labels whose masks were filled, preserving the legacy list contract."""
+        return [mark.label for mark in self.marks]
+
+    @property
+    def status(self) -> VisibleRemovalStatus:
+        """Aggregate status, with a known residual taking precedence over unknown."""
+        if not self.marks:
+            return "no_watermark"
+        if any(mark.status == "partial" for mark in self.marks):
+            return "partial"
+        if any(mark.status == "unvalidated" for mark in self.marks):
+            return "unvalidated"
+        return "cleaned"
 
 
 @dataclass(frozen=True)
@@ -882,7 +939,17 @@ def _build_candidates(image: NDArray[Any]) -> list[Candidate]:
             continue
         strict, relaxed = m.detect_both(image)
         feats = m.features(image) if (strict.detected or relaxed.detected) else {}
-        cands.append(Candidate(m.key, m.label, strict.detected, relaxed.detected, feats))
+        cands.append(
+            Candidate(
+                m.key,
+                m.label,
+                strict.detected,
+                relaxed.detected,
+                feats,
+                strict_detection=strict,
+                relaxed_detection=relaxed,
+            )
+        )
     return cands
 
 
@@ -913,14 +980,31 @@ def decide(candidates: list[Candidate], context: Context) -> list[Decision]:
     return fired
 
 
-def remove_auto_marks(
+def _mask_bbox(mask: NDArray[Any]) -> Region | None:
+    """Smallest ``(x, y, w, h)`` box containing a mask, or None when empty."""
+    import cv2
+
+    x, y, w, h = cv2.boundingRect(mask)
+    return (x, y, w, h) if w > 0 and h > 0 else None
+
+
+def _regions_overlap(left: Region, right: Region) -> bool:
+    """Whether two positive-area ``(x, y, w, h)`` regions overlap."""
+    lx, ly, lw, lh = left
+    rx, ry, rw, rh = right
+    if min(lw, lh, rw, rh) <= 0:
+        return False
+    return lx < rx + rw and rx < lx + lw and ly < ry + rh and ry < ly + lh
+
+
+def remove_auto_marks_detailed(
     image: NDArray[Any],
     *,
     sensitivity: Sensitivity = "auto",
     provenance: frozenset[str] = frozenset(),
     backend: Backend = "auto",
-) -> tuple[NDArray[Any], list[str]]:
-    """Remove EVERY decided ``in_auto`` mark in one pass, chaining the result.
+) -> VisibleRemovalResult:
+    """Fill every decided mark once, then validate each result without editing it.
 
     The three stages are separated: PERCEPTION (:func:`_build_candidates` -- engines
     report what they see, no policy), DECISION (:func:`decide` -- the pure arbiter over
@@ -932,16 +1016,104 @@ def remove_auto_marks(
     Three orthogonal knobs: ``sensitivity`` (how hard to trust a borderline mark --
     see :data:`Sensitivity`), ``provenance`` (vendor keys external metadata confirms,
     the evidence that drives ``auto``; the TC260 label maps to ``jimeng``/``doubao``),
-    and ``backend`` (the shared fill). Returns ``(result, [labels removed])``; empty
-    means nothing fired."""
+    and ``backend`` (the shared fill).
+
+    Each successful action has a fourth, read-only stage: the same mark detector runs
+    once on the filled image. An accepted region counts as a residual only when it
+    overlaps the mask that was actually filled. The result is ``partial`` in that case,
+    ``unvalidated`` if the detector fails, and ``cleaned`` otherwise. This is a
+    self-consistency check, not an independent removal oracle; it never changes the
+    mask, retries the fill, or hides the candidate image.
+
+    The first selected mark reuses the exact detection from perception because its
+    input is still unchanged. Later marks retain the historical re-detection on the
+    progressively modified image, so overlapping/co-firing marks cannot act on stale
+    evidence."""
     context = Context(sensitivity=sensitivity, provenance=provenance)
     result = image
-    labels: list[str] = []
+    removals: list[MarkRemovalResult] = []
+    resolved_backend: Literal["cv2", "migan", "lama"] | None = None
     for d in decide(_build_candidates(image), context):
-        result, region = get_mark(d.candidate.key).remove(result, backend=backend, provenance=d.relax, force=False)
-        # Only report the mark as removed when a fill actually happened: remove() returns
-        # a None region when the localized mask came back empty, and reporting it anyway
-        # would claim a removal that left the pixels unchanged.
-        if region is not None:
-            labels.append(d.candidate.label)
-    return result, labels
+        mark = get_mark(d.candidate.key)
+        cached_detection = None
+        if not removals:
+            cached_detection = d.candidate.relaxed_detection if d.relax else d.candidate.strict_detection
+        localization = mark.localize(
+            result,
+            provenance=d.relax,
+            force=False,
+            detection=cached_detection,
+        )
+        mask = localization.mask
+        if mask is None:
+            continue
+        bbox = _mask_bbox(mask)
+        if bbox is None:
+            continue
+
+        if resolved_backend is None:
+            resolved_backend = resolve_backend(backend)
+        region = localization.region
+        confidence_before = localization.confidence
+        result = fill(result, mask, backend=resolved_backend)
+        del localization, mask
+
+        confidence_after: float | None = None
+        residual_region: Region | None = None
+        validation_status: MarkValidationStatus
+        try:
+            after = mark.detect(result, provenance=d.relax)
+            confidence_after = after.confidence
+            if after.detected and _regions_overlap(after.region, bbox):
+                validation_status = "partial"
+                residual_region = after.region
+            else:
+                validation_status = "cleaned"
+        except Exception as exc:
+            validation_status = "unvalidated"
+            logger.warning(
+                "Post-removal validation failed for %s after %s fill in mask %s: %s",
+                mark.key,
+                resolved_backend,
+                bbox,
+                exc,
+            )
+
+        removals.append(
+            MarkRemovalResult(
+                key=mark.key,
+                label=mark.label,
+                location=mark.location,
+                region=region,
+                mask_bbox=bbox,
+                backend=resolved_backend,
+                confidence_before=confidence_before,
+                confidence_after=confidence_after,
+                status=validation_status,
+                residual_region=residual_region,
+            )
+        )
+
+    return VisibleRemovalResult(result, tuple(removals))
+
+
+def remove_auto_marks(
+    image: NDArray[Any],
+    *,
+    sensitivity: Sensitivity = "auto",
+    provenance: frozenset[str] = frozenset(),
+    backend: Backend = "auto",
+) -> tuple[NDArray[Any], list[str]]:
+    """Compatibility wrapper returning the filled image and removed labels.
+
+    The action still performs the read-only post-removal check. Call
+    :func:`remove_auto_marks_detailed` when its ``cleaned`` / ``partial`` /
+    ``unvalidated`` result is needed.
+    """
+    report = remove_auto_marks_detailed(
+        image,
+        sensitivity=sensitivity,
+        provenance=provenance,
+        backend=backend,
+    )
+    return report.image, report.labels

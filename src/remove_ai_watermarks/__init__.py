@@ -5,6 +5,7 @@ High-level API (lazy, so ``import remove_ai_watermarks`` stays cheap)::
     import remove_ai_watermarks as raiw
     raiw.remove_visible("in.png", "out.png")            # clean a file (provenance auto)
     result, removed = raiw.remove_visible(bgr_array)    # array -> array
+    report = raiw.remove_visible_detailed(bgr_array)    # cleaned / partial / unvalidated
     raiw.visible_provenance("in.png")                   # -> frozenset of confirmed vendors
     raiw.identify_video("in.mp4")                       # -> VideoProvenanceReport
     raiw.inspect_video_metadata("in.mp4")               # -> VideoMetadataReport
@@ -42,6 +43,7 @@ __all__ = [
     "OpenAIProvenanceError",
     "OpenAISynthIDDetection",
     "RemoveAllResult",
+    "VisibleRemovalResult",
     "__version__",
     "identify_video",
     "inspect_video_metadata",
@@ -53,6 +55,7 @@ __all__ = [
     "remove_video_metadata",
     "remove_video_visible",
     "remove_visible",
+    "remove_visible_detailed",
     "verify_openai_synthid",
     "visible_provenance",
 ]
@@ -63,9 +66,11 @@ if TYPE_CHECKING:
         InvisibleOptions,
         MetadataStripIncomplete,
         RemoveAllResult,
+        VisibleRemovalResult,
         remove_all,
         remove_batch,
         remove_visible,
+        remove_visible_detailed,
         visible_provenance,
     )
     from remove_ai_watermarks.openai_provenance import (
@@ -92,9 +97,11 @@ def __getattr__(name: str) -> object:
         "InvisibleOptions",
         "MetadataStripIncomplete",
         "RemoveAllResult",
+        "VisibleRemovalResult",
         "remove_all",
         "remove_batch",
         "remove_visible",
+        "remove_visible_detailed",
         "visible_provenance",
     ):
         from remove_ai_watermarks import api

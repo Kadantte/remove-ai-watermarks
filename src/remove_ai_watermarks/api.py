@@ -8,6 +8,7 @@ up metadata provenance, or preserve the alpha channel by hand:
     import remove_ai_watermarks as raiw
     raiw.remove_visible("in.png", "out.png")                 # path -> file, provenance auto
     result, removed = raiw.remove_visible(bgr_array)         # array -> array
+    report = raiw.remove_visible_detailed(bgr_array)         # includes post-fill status
     raiw.remove_visible("shot.png", "out.png", sensitivity="strict")
     raiw.visible_provenance("in.png")                        # -> frozenset({"gemini"})
 
@@ -26,7 +27,16 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from remove_ai_watermarks.watermark_registry import Backend, Sensitivity
+    from remove_ai_watermarks.watermark_registry import Backend, Sensitivity, VisibleRemovalResult
+
+
+def __getattr__(name: str) -> object:
+    """Lazily expose the detailed visible result type without loading image code."""
+    if name == "VisibleRemovalResult":
+        from remove_ai_watermarks.watermark_registry import VisibleRemovalResult
+
+        return VisibleRemovalResult
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(frozen=True)
@@ -182,13 +192,42 @@ def remove_visible(
     output path untouched, so a caller that treats "no mark" as "produce nothing" (the CLI
     ``visible`` no-mark contract) does not clobber a pre-existing file at that path.
     """
+    report = remove_visible_detailed(
+        source,
+        output,
+        sensitivity=sensitivity,
+        backend=backend,
+        strip_metadata=strip_metadata,
+        write_noop=write_noop,
+    )
+    return report.image, report.labels
+
+
+def remove_visible_detailed(
+    source: str | Path | NDArray[Any],
+    output: str | Path | None = None,
+    *,
+    sensitivity: Sensitivity = "auto",
+    backend: Backend = "auto",
+    strip_metadata: bool = True,
+    write_noop: bool = True,
+) -> VisibleRemovalResult:
+    """Remove known visible marks and report the read-only post-fill check.
+
+    Unlike :func:`remove_visible`, this returns one :class:`VisibleRemovalResult`.
+    Its aggregate ``status`` is ``no_watermark``, ``cleaned``, ``partial``, or
+    ``unvalidated``. Each mark also records the before/after detector confidence,
+    filled mask box, backend, and any overlapping residual region.
+
+    The validator never edits the image: every selected mask is filled exactly once,
+    then the same detector checks the result. All input, output, metadata, alpha, and
+    no-op semantics otherwise match :func:`remove_visible`.
+    """
     from remove_ai_watermarks import watermark_registry
 
-    # Reject a removed sensitivity loudly; `Sensitivity` is a Literal and not enforced
-    # at runtime, so a 0.15 caller would otherwise get `auto` behavior in silence.
     watermark_registry.validate_sensitivity(sensitivity)
     loaded = _load_visible_input(source)
-    result, removed = watermark_registry.remove_auto_marks(
+    report = watermark_registry.remove_auto_marks_detailed(
         loaded.bgr,
         sensitivity=sensitivity,
         provenance=loaded.provenance,
@@ -197,13 +236,13 @@ def remove_visible(
     if output is not None:
         _write_visible_result(
             loaded,
-            result,
-            removed,
+            report.image,
+            report.labels,
             output,
             strip_metadata=strip_metadata,
             write_noop=write_noop,
         )
-    return result, removed
+    return report
 
 
 # ── The three-stage image pipeline (visible -> invisible -> metadata) ──

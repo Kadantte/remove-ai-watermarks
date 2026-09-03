@@ -50,9 +50,26 @@ The function returns:
 An empty `removed` list means that no registered visible mark was selected. It
 does not prove the image has no metadata or invisible watermark.
 
+Use the detailed form when the caller needs to distinguish a validated fill
+from a residual or a validator failure:
+
+```python
+report = raiw.remove_visible_detailed("watermarked.png", "clean.png")
+print(report.status)  # "no_watermark" | "cleaned" | "partial" | "unvalidated"
+for mark in report.marks:
+    print(mark.label, mark.status, mark.confidence_before, mark.confidence_after)
+```
+
+Each selected mark is localized and filled once. The same detector then checks
+the result without changing the mask or running another fill. `partial` means
+that detector still accepts a region overlapping the mask that was filled;
+`unvalidated` means the check failed, not that the mark remains. The legacy
+`remove_visible` tuple API performs the same check but intentionally discards
+the detailed status.
+
 ### Path input
 
-For a path input, `remove_visible`:
+For a path input, `remove_visible` and `remove_visible_detailed`:
 
 - reads metadata provenance for the default `auto` sensitivity;
 - preserves a separate alpha channel;

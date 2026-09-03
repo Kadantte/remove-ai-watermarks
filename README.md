@@ -401,6 +401,9 @@ import remove_ai_watermarks as raiw
 result, removed = raiw.remove_visible("watermarked.png", "clean.png")
 print(removed)
 
+report = raiw.remove_visible_detailed("watermarked.png", "clean.png")
+print(report.status)  # cleaned | partial | unvalidated | no_watermark
+
 openai_synthid = raiw.verify_openai_synthid("image.png", acknowledge_upload=True)
 print(openai_synthid.status)
 

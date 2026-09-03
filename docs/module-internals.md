@@ -89,6 +89,8 @@ Regression coverage:
 points:
 
 - `remove_visible`
+- `remove_visible_detailed`, returning a `VisibleRemovalResult` with per-mark
+  post-fill validation
 - `visible_provenance`
 
 and the image pipeline that the `all` and `batch` commands are thin wrappers
@@ -121,9 +123,9 @@ The package root exposes all of them lazily through
 [`__getattr__`](../src/remove_ai_watermarks/__init__.py), keeping a plain package
 import free of the heavier image and model imports.
 
-For path inputs, `remove_visible` reads provenance metadata, preserves alpha,
-and optionally writes and strips metadata. Array inputs are treated as BGR
-arrays and have no file provenance or separate alpha plane.
+For path inputs, both visible-removal entry points read provenance metadata,
+preserve alpha, and optionally write and strip metadata. Array inputs are
+treated as BGR arrays and have no file provenance or separate alpha plane.
 
 When no visible mark is removed, a same-format path copy preserves the original
 bytes. `write_noop=False` leaves the requested output path untouched instead.
@@ -1172,6 +1174,31 @@ absent or unmapped producer still falls back to the ByteDance pair.
 
 `remove_auto_marks` removes every selected mark, not only the strongest one.
 This matters for images that carry marks in more than one corner.
+
+The automatic path has four stages: perception, decision, action, then read-only
+validation. The first action reuses the exact detection produced by perception,
+so the common one-mark path pays for one pre-fill and one post-fill detector pass
+rather than two pre-fill passes plus validation. Later co-firing marks retain the
+historical re-detection on the progressively edited image instead of acting on
+stale geometry.
+
+After one fill, the same detector runs at the same resolved trust level. A
+post-fill detection counts as a residual only if its region overlaps the actual
+mask bounding box. The per-mark status is `cleaned`, `partial`, or `unvalidated`;
+the aggregate also has `no_watermark`. Validation never expands the mask or
+retries the fill. Because it uses the same detector, this is a consistency check,
+not an independent oracle of visual quality.
+
+Runtime was measured on 2026-09-03 with 12 tracked public visible fixtures, five
+warmed repetitions each, explicit `cv2`, alternating old/new order, and no
+concurrent benchmark load. Across 60 paired runs, the old path's median was
+373.9 ms and the validated path's median was 379.2 ms; the median paired delta
+was -0.9% (interquartile range -3.6% to +1.5%) and the aggregate delta was
+-1.5%. All output pixels and removed-label lists matched the old path. These
+figures show no measurable regression on that corpus, not a cross-machine
+latency guarantee. A separate exact snapshot check kept every strict/relaxed
+verdict, confidence, and region unchanged for all 12 detectors on all 12
+fixtures.
 
 Regression coverage:
 

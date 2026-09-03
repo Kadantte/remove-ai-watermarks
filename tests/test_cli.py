@@ -156,6 +156,42 @@ class TestVisibleCommand:
         assert not output.exists()
         assert "all" in result.output
 
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            ("partial", "overlapping residual still detected"),
+            ("unvalidated", "Post-removal validation unavailable"),
+        ],
+    )
+    def test_visible_auto_reports_non_clean_validation_status(self, runner, sample_png, tmp_path, status, expected):
+        from remove_ai_watermarks.watermark_registry import MarkRemovalResult, VisibleRemovalResult
+
+        output = tmp_path / "clean.png"
+        image = cv2.imread(str(sample_png), cv2.IMREAD_COLOR)
+        mark = MarkRemovalResult(
+            key="gemini",
+            label="Gemini visible watermark",
+            location="bottom-right",
+            region=(10, 10, 20, 20),
+            mask_bbox=(10, 10, 20, 20),
+            backend="cv2",
+            confidence_before=0.9,
+            confidence_after=0.6 if status == "partial" else None,
+            status=status,
+            residual_region=(12, 12, 10, 10) if status == "partial" else None,
+        )
+
+        def _fake_detailed(_source, destination, **_kwargs):
+            assert cv2.imwrite(str(destination), image)
+            return VisibleRemovalResult(image, (mark,))
+
+        with patch("remove_ai_watermarks.api.remove_visible_detailed", side_effect=_fake_detailed):
+            result = runner.invoke(main, ["visible", str(sample_png), "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        assert expected in result.output
+        assert "Removed: Gemini visible watermark" not in result.output
+
     def test_visible_basic(self, runner, sample_png, tmp_path):
         output = tmp_path / "clean.png"
         result = runner.invoke(
