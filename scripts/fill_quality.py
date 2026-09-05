@@ -53,25 +53,6 @@ from invisible_quality_audit import _ssim  # noqa: E402 -- path selects this wor
 CORPUS = REPO / ".local-eval" / "originals"
 OUT = REPO / ".local-eval" / "fill-quality.jsonl"
 
-# Text marks: a bundled alpha PNG plus the engine's own corner geometry.
-STAMPABLE = (
-    "doubao",
-    "jimeng",
-    "qwen",
-    "kling",
-    "yuanbao",
-    "samsung",
-    "runninghub",
-    "baidu",
-    "liblib",
-    "microsoft",
-)
-# Marks with no bundled alpha asset. Both expose a default footprint via
-# `footprint_mask(force=True)`, so they are stamped by fitting their own alpha source
-# into that slot: Gemini's alpha is derived from its background captures, the pill's
-# from its synthetic font-rendered silhouette.
-SLOT_STAMPABLE = ("gemini", "jimeng_pill")
-
 
 def psnr(a: np.ndarray, b: np.ndarray) -> float:
     mse = float(np.mean((a.astype(np.float64) - b.astype(np.float64)) ** 2))
@@ -86,122 +67,13 @@ def texture_of(box: np.ndarray) -> float:
     return float(np.median(cv2.magnitude(gx, gy)))
 
 
-def engine_for(mark_key: str) -> Any:
-    """The TextMarkEngine instance for a mark key (the registry does not expose one)."""
-    import importlib
-
-    mod = importlib.import_module(f"remove_ai_watermarks.{mark_key}_engine")
-    cls = next(
-        obj
-        for name, obj in vars(mod).items()
-        # Exclude the imported base class: it takes a `config` arg, the subclasses do not.
-        if isinstance(obj, type) and name.endswith("Engine") and name != "TextMarkEngine"
-    )
-    return cls()
-
-
-def composite(image: np.ndarray, alpha: np.ndarray, x: int, y: int) -> np.ndarray:
-    """The single forward model every stamp uses: ``stamped = (1-a)*bg + a*white``.
-
-    ``alpha`` is float and clipped to [0,1] here, so a caller may pre-multiply it by an
-    opacity factor without worrying about overflow. Shared by ``stamp``/``stamp_slot``
-    here and by ``scripts/detector_response.py`` (which imports it) so the model is
-    written ONCE.
-    """
-    gh, gw = alpha.shape[:2]
-    out = image.copy()
-    roi = out[y : y + gh, x : x + gw].astype(np.float32)
-    a3 = np.clip(alpha, 0.0, 1.0)[..., None]
-    out[y : y + gh, x : x + gw] = np.clip(roi * (1 - a3) + 255.0 * a3, 0, 255).astype(np.uint8)
-    return out
-
-
-def stamp(
-    image: np.ndarray, mark_key: str, *, size_mult: float = 1.0, alpha_mult: float = 1.0
-) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
-    """Composite a mark's alpha glyph into its canonical corner. Returns (stamped, bbox).
-
-    ``size_mult`` scales the glyph box off the engine's nominal geometry and ``alpha_mult``
-    its opacity -- both default to 1.0 (the geometry the engine assumes), and
-    `scripts/detector_response.py` sweeps them to build response curves.
-    """
-    from remove_ai_watermarks._text_mark_engine import load_alpha_template
-
-    engine = engine_for(mark_key)
-    cfg = engine.config
-    alpha = load_alpha_template(cfg.asset_name)
-    if alpha is None:
-        return None
-
-    loc = engine.locate(image)
-    base = engine.scale_base(image)
-    gw = max(cfg.min_gw, int(cfg.alpha_width_frac * base * size_mult))
-    gh = max(4, int(cfg.alpha_height_frac * base * size_mult))
-    if gw < 8 or gh < 4 or gw > loc.w or gh > loc.h:
-        return None
-
-    a = cv2.resize(alpha, (gw, gh), interpolation=cv2.INTER_AREA).astype(np.float32) * alpha_mult
-    x = loc.x + (loc.w - gw) // 2
-    y = loc.y + (loc.h - gh) // 2
-    return composite(image, a, x, y), (x, y, gw, gh)
-
-
-def _slot_alpha(mark_key: str) -> np.ndarray | None:
-    """The alpha source for a mark that ships no bundled alpha PNG."""
-    if mark_key == "gemini":
-        from remove_ai_watermarks.gemini_engine import _shared_engine
-
-        # _shared_engine is the package's own lru_cache singleton: constructing
-        # GeminiEngine() per image reloads its captures, recomputes both alpha maps and
-        # rebuilds the whole template ladder -- the exact cost that singleton exists to
-        # avoid. Private attribute access is deliberate (no accessor exists); a
-        # measurement script may reach in, product code must not.
-        return np.asarray(_shared_engine()._alpha_large, dtype=np.float32)
-    if mark_key == "jimeng_pill":
-        from remove_ai_watermarks._text_mark_engine import load_alpha_template
-
-        return load_alpha_template("jimeng_pill.png")
-    return None
-
-
-def stamp_slot(
-    image: np.ndarray, mark_key: str, *, size_mult: float = 1.0, alpha_mult: float = 1.0
-) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
-    """Stamp a mark into its OWN default footprint slot (the `--no-detect` geometry).
-
-    Used for gemini and the pill, which have no bundled alpha asset with corner
-    fractions. The mark is fitted into the middle of its slot so the fill has to
-    recover the same kind of region it would in production. ``size_mult``/``alpha_mult``
-    match ``stamp`` (both default to 1.0).
-    """
-    from remove_ai_watermarks.watermark_registry import get_mark
-
-    alpha = _slot_alpha(mark_key)
-    if alpha is None:
-        return None
-    loc = get_mark(mark_key).localize(image, force=True)
-    if loc.mask is None:
-        return None
-    ys, xs = np.nonzero(loc.mask)
-    if ys.size == 0:
-        return None
-    y0, y1, x0, x1 = int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
-    bw, bh = x1 - x0 + 1, y1 - y0 + 1
-    gw, gh = max(8, int(bw * 0.7 * size_mult)), max(8, int(bh * 0.7 * size_mult))
-    a = cv2.resize(alpha, (gw, gh), interpolation=cv2.INTER_AREA).astype(np.float32) * alpha_mult
-    x, y = x0 + (bw - gw) // 2, y0 + (bh - gh) // 2
-    # A large size_mult can grow the glyph past its slot and push x/y negative; guard so
-    # composite never writes out of bounds (numpy would wrap a negative index silently).
-    if x < 0 or y < 0 or x + gw > image.shape[1] or y + gh > image.shape[0]:
-        return None
-    return composite(image, a, x, y), (x, y, gw, gh)
-
-
 def stamp_any(
     image: np.ndarray, mark_key: str, *, size_mult: float = 1.0, alpha_mult: float = 1.0
 ) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
-    fn = stamp if mark_key in STAMPABLE else stamp_slot
-    return fn(image, mark_key, size_mult=size_mult, alpha_mult=alpha_mult)
+    """Stamp via the same forward model that produces the verified gallery."""
+    from render_visible_examples import stamp_image_mark
+
+    return stamp_image_mark(mark_key, image, size_mult=size_mult, alpha_mult=alpha_mult)
 
 
 def clean_sources(n: int, seed: int = 11) -> list[Path]:
@@ -241,7 +113,7 @@ def main() -> None:
 
     from remove_ai_watermarks.image_io import imread
     from remove_ai_watermarks.region_eraser import lama_available, migan_available
-    from remove_ai_watermarks.watermark_registry import fill, get_mark
+    from remove_ai_watermarks.watermark_registry import fill, get_mark, mark_keys
 
     backends = ["cv2"] + (["migan"] if migan_available() else []) + (["lama"] if lama_available() else [])
     print(f"backends under test: {backends}")
@@ -255,7 +127,7 @@ def main() -> None:
             base = imread(str(src))
             if base is None:
                 continue
-            for key in (*STAMPABLE, *SLOT_STAMPABLE):
+            for key in mark_keys():
                 st = stamp_any(base, key)
                 if st is None:
                     continue

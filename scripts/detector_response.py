@@ -82,7 +82,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from fill_quality import SLOT_STAMPABLE, STAMPABLE, clean_sources, stamp_any, texture_of  # noqa: E402
+from fill_quality import clean_sources, stamp_any, texture_of  # noqa: E402
+
+from remove_ai_watermarks import watermark_registry as wr  # noqa: E402
 
 OUT = REPO / ".local-eval" / "detector-response.jsonl"
 
@@ -91,7 +93,7 @@ OUT = REPO / ".local-eval" / "detector-response.jsonl"
 # front-end was introduced for) and above it (a larger re-render, or an upscaled upload).
 SIZES = (0.6, 0.8, 1.0, 1.3)
 ALPHAS = (0.3, 0.5, 0.75, 1.0)
-MARKS = (*STAMPABLE, *SLOT_STAMPABLE)
+MARKS = tuple(wr.mark_keys())
 
 
 def aspect_of(image: np.ndarray) -> str:

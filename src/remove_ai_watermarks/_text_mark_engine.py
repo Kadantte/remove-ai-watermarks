@@ -170,10 +170,11 @@ class TextMarkDetection:
     confidence: float = 0.0
     region: tuple[int, int, int, int] = (0, 0, 0, 0)
     coverage: float = 0.0  # fraction of the box occupied by glyph pixels
-    # ROI-local (x0, y0, x1, y1) of the ladder sweep's best match, in the LOCATED BOX's
-    # coordinates. None for the ``binary`` front-end (it runs no sweep) and whenever no
-    # rung matched. ``footprint_mask`` bounds the fill with it, so carrying it here is
-    # what stops the mask path re-running a sweep the detector already ran.
+    # ROI-local (x0, y0, x1, y1) of the template's best match, in the LOCATED BOX's
+    # coordinates. Continuous front ends get it from the ladder sweep; ``binary`` gets
+    # it from its single nominal-size match. None whenever no template matched.
+    # ``footprint_mask`` bounds the fill with it, so carrying it here is what stops the
+    # mask path re-running a search the detector already ran.
     match_box: tuple[int, int, int, int] | None = None
     # The trust level this detection was taken at, mirroring detect()'s ``provenance``.
     # ``footprint_mask`` reuses a threaded detection only when it matches the STRICT
@@ -258,9 +259,10 @@ def _rival_config(asset_name: str, fallback: TextMarkConfig) -> TextMarkConfig:
         return fallback
 
 
-def template_match_score(box_mask: NDArray[Any], scale_base: int, config: TextMarkConfig) -> float:
-    """Zero-mean normalized correlation of the alpha-template glyph silhouette
-    (scaled to the mark's expected size) against the candidate ``box_mask``.
+def _template_match_best(
+    box_mask: NDArray[Any], scale_base: int, config: TextMarkConfig
+) -> tuple[float, tuple[int, int, int, int] | None]:
+    """Best nominal-size template score and its inclusive ROI-local box.
 
     ``TM_CCOEFF_NORMED`` keys on glyph SHAPE, not coverage, so a dense textured
     corner does not score highly -- only the actual glyph shape does.
@@ -271,13 +273,21 @@ def template_match_score(box_mask: NDArray[Any], scale_base: int, config: TextMa
     """
     sil = glyph_silhouette(config.asset_name)
     if sil is None or box_mask.size == 0:
-        return 0.0
+        return (0.0, None)
     gw = min(box_mask.shape[1] - 1, max(config.min_gw, int(config.alpha_width_frac * scale_base)))
     gh = min(box_mask.shape[0] - 1, max(4, int(config.alpha_height_frac * scale_base)))
     if gw < config.min_gw or gh < 4:
-        return 0.0
+        return (0.0, None)
     template = cv2.resize(sil, (gw, gh), interpolation=cv2.INTER_NEAREST)
-    return float(cv2.matchTemplate(box_mask, template, cv2.TM_CCOEFF_NORMED).max())
+    result = cv2.matchTemplate(box_mask, template, cv2.TM_CCOEFF_NORMED)
+    _, score, _, top_left = cv2.minMaxLoc(result)
+    x, y = int(top_left[0]), int(top_left[1])
+    return (float(score), (x, y, x + gw - 1, y + gh - 1))
+
+
+def template_match_score(box_mask: NDArray[Any], scale_base: int, config: TextMarkConfig) -> float:
+    """Zero-mean normalized correlation of the expected glyph against ``box_mask``."""
+    return _template_match_best(box_mask, scale_base, config)[0]
 
 
 class TextMarkEngine:
@@ -626,7 +636,10 @@ class TextMarkEngine:
             # front-end that binarizes; the continuous ones never build a blob. Below
             # the gate the detection stays at confidence 0.0 and the rival margin is
             # never consulted, so the score stays None here.
-            score = self._template_match_score(box, base) if coverage >= c.detect_min_coverage else None
+            if coverage >= c.detect_min_coverage:
+                score, match_box = _template_match_best(box, base, c)
+            else:
+                score = None
         else:
             score, match_box = self._ladder_best(image, loc)
         return TextMarkScan(loc, box, base, frame=image.shape[:2], coverage=coverage, score=score, match_box=match_box)
@@ -850,7 +863,8 @@ class TextMarkEngine:
         themselves were the mask), but the inpaint reconstructs the whole wordmark
         rectangle from its surroundings, so a stroke missed by the top-hat is still
         covered. This drops the fixed alpha-template dependency, so a re-rendered or
-        differently-localized mark (e.g. a non-Italian Samsung string) is still masked.
+        differently-rendered mark can still be masked by engines that keep this default
+        rectangular policy. Engines with measured alpha footprints override this method.
 
         With ``force`` and no glyph found, falls back to the whole geometry box (the
         ``--no-detect`` path). The caller gates on detection.

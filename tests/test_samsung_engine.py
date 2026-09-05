@@ -1,18 +1,20 @@
 """Tests for the Samsung Galaxy AI visible-watermark engine.
 
-No real Samsung sample is committed (the real-photo captures are gitignored, repo
-is public), so detection/removal is exercised against a watermark synthesized from
-the bundled alpha asset itself -- self-consistent and download-free. The mark is
-anchored bottom-LEFT (unlike the bottom-right Doubao/Jimeng marks).
+Detection and removal use both controlled flat provider captures and marks synthesized
+from the bundled alpha asset. The mark is anchored bottom-LEFT (unlike the bottom-right
+Doubao/Jimeng marks).
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 
 from remove_ai_watermarks import watermark_registry as registry
+from remove_ai_watermarks.region_eraser import erase_cv2
 from remove_ai_watermarks.samsung_engine import (
     _ALPHA_HEIGHT_FRAC,
     _ALPHA_NATIVE_WIDTH,
@@ -129,6 +131,28 @@ class TestAlphaAssetAndRemoval:
         out, region = registry.get_mark("samsung").remove(wm, backend="cv2")
         assert region is not None
         assert not SamsungEngine().detect(out).detected
+
+    def test_real_gray_capture_uses_a_sparse_detector_aligned_footprint(self):
+        """The faint real glyph must not turn its whole text rectangle into a hole."""
+        path = Path(__file__).parents[1] / "data/calibration/samsung/samsung_gray_1.png"
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        eng = SamsungEngine()
+        det = eng.detect(image)
+
+        assert det.detected
+        assert det.match_box is not None
+        mask = eng.footprint_mask(image, detection=det)
+        assert mask is not None
+        assert np.count_nonzero(mask) < 10_000
+
+        out = erase_cv2(image, mask)
+        loc = eng.locate(image)
+        roi = np.s_[loc.y : loc.y + loc.h, loc.x : loc.x + loc.w]
+        clean_color = np.median(image[: image.shape[0] // 2].reshape(-1, 3), axis=0)
+        before_mae = float(np.mean(np.abs(image[roi].astype(np.float32) - clean_color)))
+        after_mae = float(np.mean(np.abs(out[roi].astype(np.float32) - clean_color)))
+        assert after_mae < before_mae * 0.25
+        assert not eng.detect(out).detected
 
     @pytest.mark.parametrize(
         ("w", "h"),

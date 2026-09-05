@@ -5,8 +5,9 @@ sample of everything it supports and a canary test can hold both sides to it
 (mark registered without example; engine regressed on its canonical example).
 
 Every example is SYNTHETIC: a deterministic generated base photo with the mark's
-own committed silhouette composited at the engine's measured geometry. The
-silhouettes are repository-owned font renders, not copied vendor raster assets.
+own committed alpha or silhouette composited at the engine's measured geometry.
+Some alpha assets were solved from controlled provider captures; the other shapes
+are repository-owned renders rather than copied vendor rasters.
 
 Regenerate with:
     uv run python scripts/render_visible_examples.py
@@ -16,13 +17,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "src"))
@@ -30,23 +27,21 @@ sys.path.insert(0, str(_ROOT / "src"))
 from remove_ai_watermarks import watermark_registry as wr  # noqa: E402
 from remove_ai_watermarks.image_io import imread  # noqa: E402
 
-ASSETS = _ROOT / "src" / "remove_ai_watermarks" / "assets"
 OUT = _ROOT / "data" / "fixtures" / "visible"
 
 # Composite strength per key: glyph target luma for the light-overlay class.
-# Kling is a thin light-gray run (not near-white); Samsung is a faint overlay
-# expressed by SCALING ITS ALPHA to 0.38 toward full white (see below); everything
-# else is the bold near-white house style.
+# Kling is a thin light-gray run. Samsung's solved asset already stores its faint
+# measured opacity and was solved against pure white, so it must use 255 without a
+# second attenuation. Everything else uses the bold near-white house style.
 _STRENGTH: dict[str, int] = {
     "kling": 208,
+    "samsung": 255,
 }
 _DEFAULT_STRENGTH = 238
 
 # Base geometry: one canonical size per mark where the engine's size modes or
 # calibrated orientation matter, otherwise a plain 3:2 landscape frame.
-# Samsung keeps the larger base: its overlay is faint (peak alpha ~0.38) and
-# the real marks live on ~2958px phone photos -- at 1536 the example falls to 0.39,
-# just under the engine's 0.40 gate.
+# Samsung keeps the larger base because real marks live on ~2958px phone photos.
 _SIZE: dict[str, tuple[int, int]] = {
     "qwen": (1536, 1536),
     "liblib": (1152, 1536),
@@ -73,22 +68,31 @@ def base_photo(w: int, h: int, seed: int = 7) -> np.ndarray:
 
 
 def _glyph_asset(name: str) -> np.ndarray:
-    at = imread(str(ASSETS / name), cv2.IMREAD_GRAYSCALE)
+    from remove_ai_watermarks._text_mark_engine import load_alpha_template
+
+    at = load_alpha_template(name)
     if at is None:
         raise RuntimeError(f"missing silhouette asset: {name}")
-    return at.astype(np.float32) / 255.0
+    return at
 
 
 def _composite_light(base: np.ndarray, alpha: np.ndarray, x: int, y: int, strength: int) -> np.ndarray:
     out = base.copy()
     h, w = alpha.shape[:2]
     roi = out[y : y + h, x : x + w].astype(np.float32)
+    alpha = np.clip(alpha, 0.0, 1.0)
     a3 = alpha[:, :, None] if alpha.ndim == 2 else alpha
     out[y : y + h, x : x + w] = np.clip(roi * (1 - a3) + strength * a3, 0, 255).astype(np.uint8)
     return out
 
 
-def _text_mark_example(key: str, base: np.ndarray) -> np.ndarray:
+def _stamp_text_mark(
+    key: str,
+    base: np.ndarray,
+    *,
+    size_mult: float,
+    alpha_mult: float,
+) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
     engine = wr._engine(key)  # the generator drives the engine's own config
     cfg = engine.config
     h, w = base.shape[:2]
@@ -96,22 +100,27 @@ def _text_mark_example(key: str, base: np.ndarray) -> np.ndarray:
         # Opaque white pill with dark text/sparkle holes, at the measured inset.
         at = _glyph_asset("microsoft_alpha.png")
         long_side = max(w, h)
-        pw = int(0.152 * long_side)
+        pw = int(0.152 * long_side * size_mult)
         ph = max(4, int(pw / (at.shape[1] / at.shape[0])))
         pad = int(0.010 * long_side)
+        if pw > w - pad or ph > h - pad:
+            return None
         pill = cv2.resize(at, (pw, ph))
         x, y = w - pad - pw, pad
         out = base.copy()
         bright = (pill > 0.6)[:, :, None]
-        out[y : y + ph, x : x + pw] = np.where(bright, 245.0, 46.0).astype(np.uint8)
-        return out
+        target = np.where(bright, 245.0, 46.0).astype(np.float32)
+        blend = float(np.clip(alpha_mult, 0.0, 1.0))
+        roi = out[y : y + ph, x : x + pw].astype(np.float32)
+        out[y : y + ph, x : x + pw] = np.clip(roi * (1 - blend) + target * blend, 0, 255).astype(np.uint8)
+        return out, (x, y, pw, ph)
     base_dim = {"short": min(w, h), "width": w, "long": max(w, h)}[cfg.scale_basis]
     # Size the glyph ON a ladder rung: the continuous front ends sweep only the
     # configured rungs, and a glyph sized between rungs collapses the NCC (the
     # comb-collapse qwen's own two-rung ladder exists to avoid).
     rung = max(cfg.ladder) if cfg.detect_frontend != "binary" else 1.0
-    gw = int(cfg.alpha_width_frac * base_dim * rung)
-    gh = max(4, int(cfg.alpha_height_frac * base_dim * rung))
+    gw = max(cfg.min_gw, int(cfg.alpha_width_frac * base_dim * rung * size_mult))
+    gh = max(4, int(cfg.alpha_height_frac * base_dim * rung * size_mult))
     loc = engine.locate(base)
     # Corner-hugging placement: the yuanbao/runninghub anchor gates demote a match
     # that does not hug the corner, and the real marks sit flush on the box's
@@ -124,39 +133,67 @@ def _text_mark_example(key: str, base: np.ndarray) -> np.ndarray:
         x = loc.x
     y = loc.y if cfg.corner in ("tl", "tr") else loc.y + loc.h - gh
     x, y = max(0, x), max(0, y)
+    if x + gw > w or y + gh > h:
+        return None
     at = _glyph_asset(f"{key}_alpha.png")
     alpha = cv2.resize(at, (gw, gh))
-    if key == "samsung":  # faint overlay: peak alpha 0.38 toward FULL white
-        alpha = alpha * 0.38
-    return _composite_light(base, alpha, x, y, _STRENGTH.get(key, _DEFAULT_STRENGTH))
+    alpha = alpha * alpha_mult
+    return _composite_light(base, alpha, x, y, _STRENGTH.get(key, _DEFAULT_STRENGTH)), (x, y, gw, gh)
 
 
-def _gemini_example(base: np.ndarray) -> np.ndarray:
-    from remove_ai_watermarks.gemini_engine import GeminiEngine, get_watermark_config, get_watermark_size
+def _stamp_gemini(
+    base: np.ndarray,
+    *,
+    size_mult: float,
+    alpha_mult: float,
+) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
+    from remove_ai_watermarks.gemini_engine import _shared_engine, get_watermark_config, get_watermark_size
 
     h, w = base.shape[:2]
-    eng = GeminiEngine()
+    eng = _shared_engine()
     size = get_watermark_size(w, h)
     alpha = eng.get_alpha_map(size)
     cfg = get_watermark_config(w, h)
     x, y = cfg.get_position(w, h)
-    return _composite_light(base, alpha.astype(np.float32), x, y, 255)
+    ah, aw = alpha.shape[:2]
+    gw, gh = max(8, int(aw * size_mult)), max(8, int(ah * size_mult))
+    x, y = x + aw - gw, y + ah - gh
+    if x < 0 or y < 0 or x + gw > w or y + gh > h:
+        return None
+    resized = cv2.resize(alpha, (gw, gh), interpolation=cv2.INTER_AREA).astype(np.float32) * alpha_mult
+    return _composite_light(base, resized, x, y, 255), (x, y, gw, gh)
 
 
-def _pill_example(base: np.ndarray) -> np.ndarray:
+def _stamp_pill(
+    base: np.ndarray,
+    *,
+    size_mult: float,
+    alpha_mult: float,
+) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
     h, w = base.shape[:2]
     at = _glyph_asset("jimeng_pill.png")
-    pw = max(24, int(0.161 * w))
+    pw = max(24, int(0.161 * w * size_mult))
     ph = max(8, int(pw * at.shape[0] / at.shape[1]))
     x, y = int(0.03 * w), int(0.03 * h)
-    alpha = cv2.resize(at, (pw, ph))
-    return _composite_light(base, alpha, x, y, 232)
+    if x + pw > w or y + ph > h:
+        return None
+    alpha = cv2.resize(at, (pw, ph)) * alpha_mult
+    return _composite_light(base, alpha, x, y, 232), (x, y, pw, ph)
 
 
-_BUILDERS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "gemini": _gemini_example,
-    "jimeng_pill": _pill_example,
-}
+def stamp_image_mark(
+    key: str,
+    base: np.ndarray,
+    *,
+    size_mult: float = 1.0,
+    alpha_mult: float = 1.0,
+) -> tuple[np.ndarray, tuple[int, int, int, int]] | None:
+    """Composite one image mark using the gallery's verified forward model."""
+    if key == "gemini":
+        return _stamp_gemini(base, size_mult=size_mult, alpha_mult=alpha_mult)
+    if key == "jimeng_pill":
+        return _stamp_pill(base, size_mult=size_mult, alpha_mult=alpha_mult)
+    return _stamp_text_mark(key, base, size_mult=size_mult, alpha_mult=alpha_mult)
 
 
 def build(
@@ -177,8 +214,10 @@ def build_pair(
     """Return the clean synthetic source and the matching marked image."""
     size = size or _SIZE.get(key, (1536, 1152))
     clean = base_photo(*size, seed=seed)
-    builder = _BUILDERS.get(key)
-    marked = builder(clean) if builder is not None else _text_mark_example(key, clean)
+    stamped = stamp_image_mark(key, clean)
+    if stamped is None:
+        raise RuntimeError(f"could not stamp {key} at its nominal geometry")
+    marked, _box = stamped
     return clean, marked
 
 

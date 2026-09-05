@@ -2,9 +2,10 @@
 
 > **Status (built 2026-06-05):** flat black and gray Samsung Galaxy AI captures
 > were obtained and the detection asset was solved. The asset now supports
-> detection and mask geometry only. Current removal localizes the wordmark and
-> uses the shared fill backend. The text below records the capture plan and its
-> locale and resolution limits.
+> detection and detector-aligned alpha-mask geometry. Current removal aligns the
+> solved alpha to the detector's winning template box and uses the shared fill
+> backend. The text below records the capture plan and its locale and resolution
+> limits.
 
 Goal: capture the Samsung Galaxy AI "✦ Contenuti generati dall'AI" visible wordmark
 over known flat backgrounds so we can rebuild and validate the silhouette used

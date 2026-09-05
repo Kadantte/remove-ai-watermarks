@@ -8,7 +8,7 @@ It is a faint, near-white semi-transparent overlay, the same overlay class as th
 Doubao/Jimeng marks but bottom-left.
 
 Detection matches the bundled glyph silhouette against the corner; removal is the
-shared **localize -> fill** (the glyph-bbox :meth:`footprint_mask` feeds
+shared **localize -> fill** (a detector-aligned alpha :meth:`footprint_mask` feeds
 ``region_eraser``), NOT reverse-alpha. This module shares
 :class:`remove_ai_watermarks._text_mark_engine.TextMarkEngine` and
 supplies only Samsung's tuned :class:`TextMarkConfig` (bottom-LEFT corner, a lower glyph
@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from remove_ai_watermarks import _text_mark_engine
-from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkEngine
+from remove_ai_watermarks import _text_mark_engine, image_io
+from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -58,6 +58,13 @@ DETECT_NCC_THRESHOLD = 0.40
 _ALPHA_NATIVE_WIDTH = 1086
 _ALPHA_WIDTH_FRAC = 0.3195  # asset width / image width -- sizes the detection silhouette
 _ALPHA_HEIGHT_FRAC = 0.0378
+
+# The solved alpha carries a wide low-opacity halo. A 0.05 floor plus one-pixel
+# dilation covered the visible strokes on both retained provider captures while
+# reducing the fill from ~19.7k pixels to ~4.9k at 1086 px width. It also covers
+# >=94% of every changed pixel on both deterministic gallery backgrounds.
+_FOOTPRINT_ALPHA_FLOOR = 0.05
+_FOOTPRINT_DILATE = 1
 
 _CONFIG = TextMarkConfig(
     name="Samsung Galaxy AI",
@@ -100,3 +107,38 @@ class SamsungEngine(TextMarkEngine):
 
     def __init__(self) -> None:
         super().__init__(_CONFIG)
+
+    def footprint_mask(
+        self,
+        image: NDArray[Any] | None,
+        *,
+        force: bool = False,
+        dilate: int | None = None,
+        detection: TextMarkDetection | None = None,
+    ) -> NDArray[Any] | None:
+        """Return the detector-aligned Samsung glyph footprint.
+
+        Samsung's peak opacity is only about 0.38, so filling the enclosing wordmark
+        rectangle destroys substantially more real content than the overlay damaged.
+        The binary detector already found the captured silhouette at one exact box;
+        align the solved alpha to that box and mask its strokes only. Explicit
+        ``force`` has no trustworthy alignment and retains the shared geometry box.
+        """
+        if force or image is None or image.size == 0:
+            return super().footprint_mask(image, force=force, dilate=dilate, detection=detection)
+
+        image = image_io.to_bgr(image)
+        det = detection if detection is not None else self.detect(image)
+        alpha = _alpha_template()
+        if alpha is not None:
+            radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
+            aligned = self._aligned_alpha_mask(
+                image,
+                det,
+                alpha,
+                alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
+                dilate=radius,
+            )
+            if aligned is not None:
+                return aligned
+        return super().footprint_mask(image, force=False, dilate=dilate, detection=det)

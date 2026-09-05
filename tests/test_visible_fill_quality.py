@@ -7,9 +7,10 @@ import numpy as np
 import pytest
 
 from remove_ai_watermarks import watermark_registry as wr
-from scripts.fill_quality import SLOT_STAMPABLE, STAMPABLE, psnr, stamp_any
+from scripts.detector_response import ALPHAS, SIZES
+from scripts.fill_quality import psnr, stamp_any
 from scripts.invisible_quality_audit import _ssim
-from scripts.render_visible_examples import build_pair
+from scripts.render_visible_examples import _glyph_asset, build_pair, stamp_image_mark
 
 _IMAGE_KEYS = tuple(mark.key for mark in wr.known_marks())
 
@@ -49,11 +50,28 @@ def _score_box(clean: np.ndarray, filled: np.ndarray, changed: np.ndarray) -> tu
     )
 
 
-def test_full_quality_harness_covers_every_registered_image_mark() -> None:
-    assert {*STAMPABLE, *SLOT_STAMPABLE} == set(_IMAGE_KEYS)
+def test_samsung_stamp_uses_the_solved_alpha_exactly_once() -> None:
+    """The asset already stores the measured ~0.38 peak opacity."""
+    clean = np.full((1448, 1086, 3), 100, np.uint8)
+    stamped = stamp_image_mark("samsung", clean)
+    assert stamped is not None
+    marked, (x, y, w, h) = stamped
+    alpha = cv2.resize(_glyph_asset("samsung_alpha.png"), (w, h), interpolation=cv2.INTER_LINEAR)
+    expected = np.clip(100.0 * (1.0 - alpha) + 255.0 * alpha, 0, 255).astype(np.uint8)
+    assert np.array_equal(marked[y : y + h, x : x + w, 0], expected)
+
+
+def test_detector_response_can_construct_every_declared_grid_cell() -> None:
+    """An out-of-search-range mark is a measured miss, not an omitted row."""
     for key in _IMAGE_KEYS:
         clean, _marked = build_pair(key)
-        assert stamp_any(clean, key) is not None, key
+        for size_mult in SIZES:
+            for alpha_mult in ALPHAS:
+                assert stamp_any(clean, key, size_mult=size_mult, alpha_mult=alpha_mult) is not None, (
+                    key,
+                    size_mult,
+                    alpha_mult,
+                )
 
 
 @pytest.mark.parametrize("key", _IMAGE_KEYS)

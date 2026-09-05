@@ -1326,7 +1326,7 @@ box grows), not the whole `footprint_mask`. Baidu extends right to the corner ta
 and LiblibAI extends left to the triangle logo; both inherit every guard around
 that arithmetic.
 
-Doubao and Kling are deliberate sparse-mask exceptions because their alpha assets
+Doubao, Kling, and Samsung are deliberate sparse-mask exceptions because their alpha assets
 supply more information than a rectangle. Doubao's continuous top-hat response
 locates the mark, then `DoubaoEngine.footprint_mask` resizes the alpha to that same winning
 `match_box` and masks only the glyphs. The canonical 2048-pixel fixture has bright
@@ -1348,6 +1348,23 @@ median SSIM by 0.062; both moved in the favorable direction on 52 pairs, tied on
 seven, and regressed on one. The union is deliberate: replacing the old footprint
 with the synthetic core alone would overfit the font render and could discard a
 real variant stroke the pixel mask already found.
+
+Samsung's binary front end now carries the location of its nominal-size template
+match as well as the score. `SamsungEngine.footprint_mask` aligns the captured alpha
+to that same box and masks only pixels above the measured 0.05 alpha floor, followed
+by one pixel of dilation. The asset already contains the solved opacity, whose peak
+is about 0.38; research renderers must composite it toward pure white exactly once.
+Multiplying it by 0.38 again produced an unrealistically faint synthetic mark and
+invalidated the first Samsung response curve.
+
+The mask geometry was checked on both retained flat provider captures and by a
+paired 60-image constructed-reference ablation on 2026-09-04. At the native
+1086-pixel capture width, the mask fell from about 19.7k pixels to 4.9k while one
+fill still cleared the detector. Against the old rectangle, regional PSNR improved
+on 55/60 images for OpenCV, 55/60 for MI-GAN, and 57/60 for LaMa; median paired
+gains were 14.98, 10.38, and 14.87 dB respectively (two-sided sign-test
+`p=1.04e-11`, `1.04e-11`, and `6.25e-14`). Explicit `force` has no detected box to
+align and deliberately retains the conservative geometry fallback.
 
 Yuanbao uses the polarity-independent `contrast` front end because its standard
 two-line mark can be light on dark scenes or dark on light scenes. Its detector

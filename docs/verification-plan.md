@@ -158,9 +158,47 @@ corpus would make the gate expensive and nondeterministic.
 
 Construct marked images from clean local references, compare each backend against the known original inside the affected footprint, and keep the report under `.local-eval/`.
 
+#### Public clean-corpus run, 2026-09-04
+
+The local source pool combined 186 Unsplash Lite photos and 235 Openverse Flickr
+Creative Commons images. All 421 manifest entries were unique, every referenced
+binary existed, and every SHA-256 matched before sampling. The report records only
+source filenames and measurements under `.local-eval/`; no image bytes or private
+corpus facts enter the repository.
+
+The 60-source, three-backend run produced 1,980 valid measurements for the 11
+non-Samsung marks. Every mark/backend pair had positive median PSNR recovery over
+the stamped input. In paired comparisons, LaMa exceeded OpenCV by a median 1.20 dB
+on 610 finite pairs and moved in the favorable direction on 432 versus 175 pairs
+(two-sided sign-test `p=4.86e-26`). MI-GAN exceeded OpenCV by 0.31 dB in PSNR, but
+its median SSIM was 0.0136 lower; backend preference is therefore metric- and
+content-dependent rather than a universal ordering.
+
+The first Samsung rows from that run are rejected evidence: the forward model
+multiplied the already-solved alpha asset by 0.38 a second time and composited
+toward the generic 238 luma rather than the measured pure-white glyph. After fixing
+that construction, a factorial ablation changed only the removal mask on the same
+60 sources. The detector-aligned sparse mask improved PSNR over the old rectangle
+on 55/60 OpenCV pairs, 55/60 MI-GAN pairs, and 57/60 LaMa pairs, with median gains
+of 14.98, 10.38, and 14.87 dB (`p=1.04e-11`, `1.04e-11`, and `6.25e-14`). Relative
+to the correctly stamped damaged input, median recovery was +13.27 dB for OpenCV,
++9.31 dB for MI-GAN, and +15.49 dB for LaMa. These are constructed-reference mask
+quality results, not production recall.
+
 ### B2. Detector response curves
 
 Use `scripts/detector_response.py` to sweep mark size, opacity, background, and aspect. Report detection and maskability separately. Generated reports stay under `.local-eval/`.
+
+The corrected 2026-09-04 run contains 28,800 stamped cells and 1,800 matched clean
+controls over 150 public clean backgrounds. Every mark had 0/150 control fires
+(per-mark 95% Wilson upper bound 2.5%), and every detected cell was maskable. Nominal
+constructed detection ranged from 54.0% for the Jimeng pill to 96.7% for Yuanbao
+among the non-Samsung marks. Samsung reached 20.0%; the earlier 0.7% value is invalid
+because it came from the double-attenuated renderer. Samsung still falls sharply on
+busy synthetic backgrounds, so this grid identifies a detector-recall follow-up; it
+does not justify lowering the threshold because the grid is adversarial and is not a
+production-recall sample. The corrected report is
+`.local-eval/detector-response-corrected-n150.jsonl`.
 
 ### B3. Invisible round-trip, positive-control gated
 
