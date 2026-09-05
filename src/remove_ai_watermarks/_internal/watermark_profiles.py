@@ -61,6 +61,16 @@ PROFILE_ADAPTIVE_POLISH = {
     AUTO_PROFILE: False,
 }
 
+# Which profiles let ``--cpu-offload`` reach their GLOBAL stack. The face stage
+# honours the flag everywhere, because residency lives on the shared base, but the
+# global stack is each profile's own: only qwen-zimage streams it, through
+# ``_qwen_vram_config``. chroma-zimage and sdxl-zimage load theirs with a plain
+# ``.to(device)``, so on a card below the face-stage residency floor the flag has
+# nothing left to change and the run behaves as if it were absent. Data rather than
+# a subclass attribute, because the caller that must warn cannot import a profile
+# module without pulling in Diffusers.
+GLOBAL_OFFLOAD_PROFILES = frozenset({QWEN_ZIMAGE_PROFILE})
+
 SDXL_LIGHTNING_MODEL_ID = "ByteDance/SDXL-Lightning"
 SDXL_LIGHTNING_PATTERN = "sdxl_lightning_4step_lora.safetensors"
 
@@ -219,6 +229,19 @@ def resolve_adaptive_polish(adaptive_polish: bool | None, pipeline: str) -> bool
     if adaptive_polish is not None:
         return adaptive_polish
     return PROFILE_ADAPTIVE_POLISH.get(normalize_profile(pipeline), True)
+
+
+def global_offload_supported(pipeline: str) -> bool:
+    """Whether ``--cpu-offload`` reaches this profile's global stack.
+
+    Per-image ``auto`` runs resolve before loading a stack. An explicit preload is
+    the only unresolved ``auto`` load, and that path deliberately uses qwen-zimage
+    as its fallback, so it has the same offload support as qwen-zimage.
+    """
+    profile = normalize_profile(pipeline)
+    if profile == AUTO_PROFILE:
+        profile = resolve_auto_profile(None)
+    return profile in GLOBAL_OFFLOAD_PROFILES
 
 
 def strength_default_help() -> str:
