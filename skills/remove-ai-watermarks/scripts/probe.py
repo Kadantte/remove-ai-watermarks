@@ -224,26 +224,29 @@ def _advice(
             "detail": f"Install with {installer}. Default extra is visible.",
         }
 
-    # A found CLI without the pixel stack can still read metadata, and NOTHING else.
-    # Reporting these as "ok" is what sent an agent into a missing-cv2 crash on a
-    # machine the probe had just called ready.
+    # A found CLI without the pixel stack can still use the metadata-only image and
+    # video routes. Reporting pixel commands as "ok" is what sent an agent into a
+    # missing-cv2 crash on a machine the probe had just called ready.
     no_pixels = pixels == "missing"
     advice = {
         "identify": "metadata_only_no_pixels" if no_pixels else "ok",
         "visible": "needs_visible_extra" if no_pixels else "ok",
         "metadata": "ok",
-        "video_visible": "needs_visible_extra" if no_pixels else ("ok" if ffmpeg else "needs_ffmpeg"),
+        "video_identify": "metadata_only_no_pixels" if no_pixels else "ok",
+        "video_metadata": "ok",
+        "video_visible": "needs_video_extra" if no_pixels else ("ok" if ffmpeg else "needs_ffmpeg"),
         "invisible_images": "unavailable_no_cuda" if not cuda else ("needs_visible_extra" if no_pixels else "ok"),
         "image_all": _image_all(no_pixels=no_pixels, cuda=cuda, invisible=invisible),
-        "video_invisible": "ok_cpu_or_gpu" if ffmpeg else "needs_ffmpeg",
+        "video_invisible": (
+            "needs_video_and_diffusion_extras" if no_pixels else ("ok_cpu_or_gpu" if ffmpeg else "needs_ffmpeg")
+        ),
         "no_cuda_fallback": host,
-        "pixel_stack": pixels,
-        "invisible_stack": invisible,
     }
     if no_pixels:
         advice["next"] = "install_visible"
         advice["detail"] = (
-            "The installed CLI has no pixel dependencies, so only metadata commands work. "
+            "The installed CLI has no pixel dependencies. Metadata-only image and video "
+            "commands still work, including both metadata batch modes. "
             f"Reinstall with the visible extra using {installer or 'uv, pipx or pip'}. "
             "A Homebrew install cannot carry extras."
         )

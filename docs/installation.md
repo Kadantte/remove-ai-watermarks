@@ -32,12 +32,15 @@ brew install wiltodelta/tap/remove-ai-watermarks
 ```
 
 A formula cannot carry extras, so this installs the default package: metadata
-commands work, and `visible`, `erase`, `all`, `batch` and every `video` command
-stop with an install hint naming the extra that fixes them. `identify` still
+commands work, including `video metadata`, and `video identify --no-visible`
+provides metadata-only provenance inspection. `batch --mode metadata` and
+`video batch --mode metadata` also work. `visible`, `erase`, `all`, pixel-processing
+image batch modes, full `video identify`, and the video pixel-processing commands
+stop with an install hint naming the extra that fixes them. Image `identify` also
 runs, but reports metadata only and says so in its caveats. `metadata --remove`
-also works on a file whose markers survive the first strip: the raster
-normalization that recovery needs is skipped rather than crashing, and the
-survivors are reported. Reinstall with uv or pipx to add the extra.
+works on a file whose markers survive the first strip: the raster normalization
+that recovery needs is skipped rather than crashing, and the survivors are
+reported. Reinstall with uv or pipx to add the extra.
 
 ## Visible watermark removal
 

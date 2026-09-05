@@ -63,10 +63,13 @@ Do these in order after the skill is on the default branch.
 7. **OpenAI ChatGPT / Codex plugin directory.** Skills-only plugins are a
    supported submission type at
    [platform.openai.com/plugins](https://platform.openai.com/plugins). This is
-   the largest consumer surface that actually reviews listings. It needs a
-   verified Platform identity, public website / support / privacy / terms URLs,
-   starter prompts, and five positive plus three negative test cases. Claude
-   marketplace approval does not transfer. Convert with
+   the largest consumer surface that actually reviews listings. It needs Apps
+   Management write access, a verified Platform identity, public website /
+   support / privacy / terms URLs, starter prompts, and five positive plus three
+   negative test cases. Claude marketplace approval does not transfer. Contact
+   your OpenAI partner before submitting: this skill's core value requires local
+   execution, arbitrary file access, and optional hardware access, which the
+   official guide routes through that product-specific review. Convert with
    [Submit your Claude Code plugin to OpenAI](https://developers.openai.com/plugins/guides/submit-claude-plugin).
 
 Do not treat Smithery or other MCP directories as skill catalogs. Do not open

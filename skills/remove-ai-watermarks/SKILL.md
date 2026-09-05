@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Python 3.11-3.14. Invisible image removal needs NVIDIA CUDA. Some video writes need ffmpeg. Installer may be uv, pipx, or pip.
 metadata:
   author: wiltodelta
-  version: "1.0.0"
+  version: "1.0.1"
   homepage: https://raiw.cc
   repository: https://github.com/wiltodelta/remove-ai-watermarks
 ---
@@ -69,9 +69,11 @@ writes itself, because a CLI that exists is not a CLI that works.
 Read the JSON. Do not infer CUDA, ffmpeg, or an installer from the OS name.
 
 - `pixel_stack` = `missing`: the installed build has no pixel dependencies.
-  Only `identify` and `metadata` answer. `identify` skips the visible detectors
-  and says so in its caveats, so read that caveat rather than its quiet verdict.
-  Go to step 3.
+  Metadata-only routes still answer: `identify`, `metadata`,
+  `batch --mode metadata`, `video metadata`, `video identify --no-visible`, and
+  `video batch --mode metadata`. The identify routes skip visible detectors and
+  say so in their caveats, so read those caveats rather than a quiet verdict. Go
+  to step 3 before running a pixel command.
 - `pixel_stack` = `unknown`: the check gave an unrecognized result. Do not
   claim a command will work; run it and read the real error.
 - `advice.upgrade_cli` present: the installed CLI is older than this skill's
@@ -95,9 +97,10 @@ removal, it is paid and runs on a GPU. Do not quote a price: check the site.
 
 Install when `cli.found` is false OR `pixel_stack` is `missing`. A present
 binary is not enough: the default package, which is what Homebrew installs,
-carries no pixel dependencies, so `visible`, `erase`, `all`, `batch` and every
-`video` command stop with an install hint, and `identify` sees metadata only.
-Reinstalling with the extra fixes it.
+carries no pixel dependencies. `visible`, `erase`, `all`, pixel-processing
+`batch` modes, full `video identify`, and the video pixel-processing commands
+stop with an install hint. The metadata-only routes listed in step 2 still work.
+Reinstalling with the appropriate extra fixes the pixel commands.
 
 Read [references/install.md](references/install.md) for the extra list and the
 uv / pipx / pip commands. Default extra is `visible`. Always quote extras:
@@ -109,13 +112,13 @@ Default: inspect first.
 
 | User goal | Command | Stop if probe says |
 | --- | --- | --- |
-| What is on this file? | `identify` or `video identify` | |
+| What is on this file? | `identify` or `video identify` | use `video identify --no-visible` when `pixel_stack=missing` |
 | Known visible AI label on an image | `visible` | |
 | User-supplied box on their own image | `erase` | |
 | AI metadata only | `metadata` or `video metadata` | |
 | Known visible AI label on video | `video visible` or `video all` | `video_visible=needs_ffmpeg` |
 | Invisible image / image SynthID | `invisible` | `invisible_images=unavailable_no_cuda` |
-| Video SynthID | `video invisible` | `video_invisible=needs_ffmpeg` |
+| Video SynthID | `video invisible` | `video_invisible=needs_video_and_diffusion_extras` or `needs_ffmpeg` |
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |
 | A directory | `batch` or `video batch` | same as the mode |
 | No signal found, user still wants a guess | `classify` | it is a guess, not provenance |

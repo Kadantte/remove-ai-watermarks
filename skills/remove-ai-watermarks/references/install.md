@@ -31,10 +31,12 @@ python3 -m pip install --upgrade "remove-ai-watermarks[visible]"
 On Windows, `python` may exist when `python3` does not.
 
 Homebrew is macOS/Linux only and CANNOT carry extras: the formula installs the
-default package, which has no pixel dependencies, so `visible`, `erase`, `all`,
-`batch` and the `video` commands stop with an install hint, and `identify`
-reports metadata only. That is exactly what `pixel_stack: missing` means in the
-probe. Use it for metadata-only work,
+default package, which has no pixel dependencies. `visible`, `erase`, `all`,
+pixel-processing `batch` modes, full `video identify`, and video pixel-processing
+commands stop with an install hint. `identify`, `metadata`,
+`batch --mode metadata`, `video metadata`, `video identify --no-visible`, and
+`video batch --mode metadata` still provide metadata-only results. That is exactly
+what `pixel_stack: missing` means in the probe. Use Homebrew for metadata-only work,
 or when the user asks for brew by name and accepts that limit:
 
 ```bash

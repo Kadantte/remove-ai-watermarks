@@ -57,11 +57,12 @@ Important contracts:
   default package ships without those dependencies and the Homebrew formula
   installs exactly that build, so a first run following the project's own
   instructions used to die on `ModuleNotFoundError: No module named 'cv2'`.
-  `_pixels_required` wraps the four image commands (the video ones reach the same
-  build through `video._require_video_runtime`, which names the `video` extra --
-  the one that actually makes them work); `remove_batch` re-raises the same
-  ImportError instead of counting it once per file, because one absent package
-  is not N broken images. All three sites ask `optional_deps.pixels_available()`
+  `_pixels_required` wraps the four image commands. Video pixel-processing paths
+  reach the same build through `video._require_video_runtime`, which names the
+  `video` extra, while `video metadata` and `video identify --no-visible` bypass
+  the pixel runtime. `remove_batch` re-raises the same ImportError instead of
+  counting it once per file, because one absent package is not N broken images.
+  All three image sites ask `optional_deps.pixels_available()`
   rather than matching the exception's module name: an ImportError raised inside
   `cv2/__init__.py` carries `cv2.cv2` and a numpy ABI mismatch carries `None`, so
   a name match let exactly the tracebacks this guard exists for through.

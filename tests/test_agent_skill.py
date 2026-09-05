@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "remove-ai-watermarks" / "SKILL.md"
 PLUGIN = ROOT / "skills" / ".claude-plugin" / "plugin.json"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
+AGENT_DOC = ROOT / "docs" / "agent-skill.md"
+INSTALL_DOC = ROOT / "docs" / "installation.md"
+INSTALL_REFERENCE = ROOT / "skills" / "remove-ai-watermarks" / "references" / "install.md"
 
 _NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -347,6 +350,74 @@ def test_probe_reads_capability_not_presence() -> None:
     assert report["advice"]["identify"] == "metadata_only_no_pixels"
     assert report["advice"]["next"] == "install_visible"
     assert any(call[1:2] == ["visible"] for call in calls), "the probe never exercised the pixel path"
+
+
+def test_probe_keeps_metadata_only_video_routes_without_pixels() -> None:
+    probe = _probe_module()
+    report = _probe_with_fake_cli(
+        probe,
+        {"--version": _current_version_reply(probe), "visible": _NO_PIXELS_REPLY, "invisible": _NO_PIXELS_REPLY},
+    )
+
+    assert report["advice"]["video_identify"] == "metadata_only_no_pixels"
+    assert report["advice"]["video_metadata"] == "ok"
+    assert report["advice"]["video_visible"] == "needs_video_extra"
+    assert report["advice"]["video_invisible"] == "needs_video_and_diffusion_extras"
+    assert "pixel_stack" not in report["advice"]
+    assert "invisible_stack" not in report["advice"]
+
+
+def test_skill_and_install_guide_name_pixel_free_video_routes() -> None:
+    texts = [
+        SKILL.read_text(encoding="utf-8"),
+        INSTALL_REFERENCE.read_text(encoding="utf-8"),
+        INSTALL_DOC.read_text(encoding="utf-8"),
+    ]
+
+    for command in (
+        "`batch --mode metadata`",
+        "`video metadata`",
+        "`video identify --no-visible`",
+        "`video batch --mode metadata`",
+    ):
+        assert all(command in text for text in texts)
+    assert all("every `video` command" not in text for text in texts)
+    assert all("the `video` commands stop" not in text for text in texts)
+
+
+def test_metadata_only_routes_run_without_the_pixel_stack(tmp_path: Path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from remove_ai_watermarks.cli import main
+
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    (image_dir / "input.png").write_bytes(
+        (ROOT / "data" / "fixtures" / "provenance" / "ideogram-c2pa.png").read_bytes()
+    )
+    video = ROOT / "data" / "fixtures" / "visible" / "sora" / "example.mp4"
+    video_dir = tmp_path / "videos"
+    video_dir.mkdir()
+    (video_dir / "input.mp4").write_bytes(video.read_bytes())
+    monkeypatch.setitem(sys.modules, "cv2", None)
+
+    for args in (
+        ["batch", str(image_dir), "--mode", "metadata", "-o", str(tmp_path / "clean-images")],
+        ["video", "metadata", str(video), "--check"],
+        ["video", "identify", str(video), "--no-visible"],
+        ["video", "batch", str(video_dir), "--mode", "metadata", "-o", str(tmp_path / "clean-videos")],
+    ):
+        result = CliRunner().invoke(main, args, catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+
+
+def test_openai_submission_names_the_partner_gate() -> None:
+    text = " ".join(AGENT_DOC.read_text(encoding="utf-8").split())
+
+    assert "Contact your OpenAI partner before submitting" in text
+    assert "local execution" in text
+    assert "arbitrary file access" in text
+    assert "hardware access" in text
 
 
 def test_probe_calls_a_working_install_ok() -> None:
