@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "src"))
@@ -39,12 +42,17 @@ _STRENGTH: dict[str, int] = {
 }
 _DEFAULT_STRENGTH = 238
 
-# Base geometry: one canonical size per mark where the engine's size modes
-# matter (qwen's big mode), otherwise a plain 3:2 landscape frame.
+# Base geometry: one canonical size per mark where the engine's size modes or
+# calibrated orientation matter, otherwise a plain 3:2 landscape frame.
 # Samsung keeps the larger base: its overlay is faint (peak alpha ~0.38) and
 # the real marks live on ~2958px phone photos -- at 1536 the example falls to 0.39,
 # just under the engine's 0.40 gate.
-_SIZE: dict[str, tuple[int, int]] = {"qwen": (1536, 1536), "liblib": (1152, 1536), "samsung": (2048, 1536)}
+_SIZE: dict[str, tuple[int, int]] = {
+    "qwen": (1536, 1536),
+    "liblib": (1152, 1536),
+    "samsung": (2048, 1536),
+    "jimeng_pill": (1152, 1536),
+}
 
 
 def base_photo(w: int, h: int, seed: int = 7) -> np.ndarray:
@@ -80,11 +88,10 @@ def _composite_light(base: np.ndarray, alpha: np.ndarray, x: int, y: int, streng
     return out
 
 
-def _text_mark_example(key: str) -> np.ndarray:
+def _text_mark_example(key: str, base: np.ndarray) -> np.ndarray:
     engine = wr._engine(key)  # the generator drives the engine's own config
     cfg = engine.config
-    w, h = _SIZE.get(key, (1536, 1152))
-    base = base_photo(w, h)
+    h, w = base.shape[:2]
     if key == "microsoft":
         # Opaque white pill with dark text/sparkle holes, at the measured inset.
         at = _glyph_asset("microsoft_alpha.png")
@@ -94,11 +101,10 @@ def _text_mark_example(key: str) -> np.ndarray:
         pad = int(0.010 * long_side)
         pill = cv2.resize(at, (pw, ph))
         x, y = w - pad - pw, pad
-        roi = base[y : y + ph, x : x + pw].astype(np.float32)
+        out = base.copy()
         bright = (pill > 0.6)[:, :, None]
-        roi = np.where(bright, 245.0, 46.0)
-        base[y : y + ph, x : x + pw] = roi.astype(np.uint8)
-        return base
+        out[y : y + ph, x : x + pw] = np.where(bright, 245.0, 46.0).astype(np.uint8)
+        return out
     base_dim = {"short": min(w, h), "width": w, "long": max(w, h)}[cfg.scale_basis]
     # Size the glyph ON a ladder rung: the continuous front ends sweep only the
     # configured rungs, and a glyph sized between rungs collapses the NCC (the
@@ -125,11 +131,10 @@ def _text_mark_example(key: str) -> np.ndarray:
     return _composite_light(base, alpha, x, y, _STRENGTH.get(key, _DEFAULT_STRENGTH))
 
 
-def _gemini_example() -> np.ndarray:
+def _gemini_example(base: np.ndarray) -> np.ndarray:
     from remove_ai_watermarks.gemini_engine import GeminiEngine, get_watermark_config, get_watermark_size
 
-    w, h = 1536, 1152
-    base = base_photo(w, h)
+    h, w = base.shape[:2]
     eng = GeminiEngine()
     size = get_watermark_size(w, h)
     alpha = eng.get_alpha_map(size)
@@ -138,9 +143,8 @@ def _gemini_example() -> np.ndarray:
     return _composite_light(base, alpha.astype(np.float32), x, y, 255)
 
 
-def _pill_example() -> np.ndarray:
-    w, h = 1152, 1536  # the measured pill cohort is 3:4 portrait
-    base = base_photo(w, h)
+def _pill_example(base: np.ndarray) -> np.ndarray:
+    h, w = base.shape[:2]
     at = _glyph_asset("jimeng_pill.png")
     pw = max(24, int(0.161 * w))
     ph = max(8, int(pw * at.shape[0] / at.shape[1]))
@@ -149,13 +153,33 @@ def _pill_example() -> np.ndarray:
     return _composite_light(base, alpha, x, y, 232)
 
 
-_BUILDERS: dict[str, Any] = {"gemini": _gemini_example, "jimeng_pill": _pill_example}
+_BUILDERS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "gemini": _gemini_example,
+    "jimeng_pill": _pill_example,
+}
 
 
-def build(key: str) -> np.ndarray:
-    if key in _BUILDERS:
-        return _BUILDERS[key]()
-    return _text_mark_example(key)
+def build(
+    key: str,
+    *,
+    size: tuple[int, int] | None = None,
+    seed: int = 7,
+) -> np.ndarray:
+    return build_pair(key, size=size, seed=seed)[1]
+
+
+def build_pair(
+    key: str,
+    *,
+    size: tuple[int, int] | None = None,
+    seed: int = 7,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the clean synthetic source and the matching marked image."""
+    size = size or _SIZE.get(key, (1536, 1152))
+    clean = base_photo(*size, seed=seed)
+    builder = _BUILDERS.get(key)
+    marked = builder(clean) if builder is not None else _text_mark_example(key, clean)
+    return clean, marked
 
 
 # ── Video mark examples ──────────────────────────────────────────────────────

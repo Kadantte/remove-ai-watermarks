@@ -6,10 +6,10 @@ THE PROBLEM THIS SOLVES
   state a preference order for `--backend auto` that rests on no measurement.
 
 THE CONSTRUCTION
-  Take a VERIFIED-CLEAN corpus image, stamp a known mark onto it using the mark's own
-  captured alpha map (the forward model the reverse-alpha work established:
-  `stamped = (1-a)*bg + a*white`), then remove it and compare against the TRUE original.
-  The original is the answer key that reality never provides.
+  Take a VERIFIED-CLEAN corpus image, stamp a known mark onto it using the mark's bundled
+  alpha map or repository-owned synthetic silhouette (`stamped = (1-a)*bg + a*white`),
+  then remove it and compare against the TRUE original. The original is the answer key
+  that reality never provides.
 
 TWO MEASUREMENT DECISIONS THAT MAKE OR BREAK THIS
   * Score INSIDE the footprint only. The fill touches a tiny corner, so whole-frame PSNR
@@ -44,17 +44,28 @@ from typing import Any
 import cv2
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-
-from invisible_quality_audit import _ssim  # reuse, do not reimplement a third SSIM
-
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+sys.path.insert(0, str(REPO / "scripts"))
+
+from invisible_quality_audit import _ssim  # noqa: E402 -- path selects this worktree; reuse shared SSIM
+
 CORPUS = REPO / ".local-eval" / "originals"
 OUT = REPO / ".local-eval" / "fill-quality.jsonl"
 
 # Text marks: a bundled alpha PNG plus the engine's own corner geometry.
-STAMPABLE = ("doubao", "jimeng", "kling", "samsung")
+STAMPABLE = (
+    "doubao",
+    "jimeng",
+    "qwen",
+    "kling",
+    "yuanbao",
+    "samsung",
+    "runninghub",
+    "baidu",
+    "liblib",
+    "microsoft",
+)
 # Marks with no bundled alpha asset. Both expose a default footprint via
 # `footprint_mask(force=True)`, so they are stamped by fitting their own alpha source
 # into that slot: Gemini's alpha is derived from its background captures, the pill's

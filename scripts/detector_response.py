@@ -78,12 +78,12 @@ from typing import Any
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
-
-from fill_quality import SLOT_STAMPABLE, STAMPABLE, clean_sources, stamp_any, texture_of
-
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+sys.path.insert(0, str(REPO / "scripts"))
+
+from fill_quality import SLOT_STAMPABLE, STAMPABLE, clean_sources, stamp_any, texture_of  # noqa: E402
+
 OUT = REPO / ".local-eval" / "detector-response.jsonl"
 
 # 1.0 = the geometry/opacity the engine's own constants assume. The sweep reaches below

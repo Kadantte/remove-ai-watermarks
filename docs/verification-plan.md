@@ -147,6 +147,13 @@ INSIDE the footprint (whole-frame PSNR sits near 60 dB whatever the backend does
 the MEDIAN (a fill that reproduces a flat background exactly scores PSNR=inf, and one inf
 makes a mean inf -- the first run reported "+inf" for every flat bucket).
 
+`tests/test_visible_fill_quality.py` is the bounded CI smoke layer: every registered
+image mark is constructed on two deterministic backgrounds and sizes, then checked for
+stamp coverage, one-fill detector clearance, outside-mask pixel equality, and conservative
+regional PSNR/SSIM floors with the cheap OpenCV backend. The full local harness keeps the
+backend comparison and texture slicing out of CI, where model downloads and a large clean
+corpus would make the gate expensive and nondeterministic.
+
 #### Local fill-quality protocol
 
 Construct marked images from clean local references, compare each backend against the known original inside the affected footprint, and keep the report under `.local-eval/`.
