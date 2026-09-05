@@ -40,7 +40,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import cv2
 import numpy as np
 
+from .image_io import to_bgr
+
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
@@ -85,6 +89,56 @@ _LEARNED_BACKENDS: dict[str, _LearnedBackend] = {
 # state their choices without importing this cv2-loading module at their import time --
 # a test pins the two in sync.
 FILL_BACKENDS: tuple[str, ...] = ("auto", "cv2", "migan", "lama")
+
+
+def _full_scale(image: NDArray[Any]) -> float:
+    """Full-scale value of an integer image dtype: 255 for uint8, 65535 for uint16."""
+    if image.dtype.kind not in "ui":
+        raise RuntimeError(
+            f"Unsupported image depth {image.dtype}: the fill backends take integer "
+            "images (8- or 16-bit). Convert the source before erasing."
+        )
+    return float(np.iinfo(image.dtype).max)
+
+
+def _erase_via_uint8(
+    backend: Callable[[NDArray[Any], NDArray[Any]], NDArray[Any]],
+    image_bgr: NDArray[Any],
+    mask: NDArray[Any],
+) -> NDArray[Any]:
+    """Run a uint8-only backend on a deeper image without flattening the whole frame.
+
+    Two of the three backends cannot see more than 8 bits: ``cv2.inpaint`` takes
+    8-bit 3-channel colour (its 16-bit support is single-channel only), and the
+    shipped MI-GAN ONNX declares a uint8 input tensor. A 16-bit source therefore has
+    to be narrowed for the fill itself -- but only for the fill. The filled pixels are
+    written back into the original array, so everything outside the mask stays
+    bit-exact at its original depth, which is the same guarantee the learned backends
+    already make by pasting only masked pixels.
+
+    LaMa is the exception and does not come through here: its model is float32, so
+    ``erase_lama`` carries the source depth end to end.
+    """
+    scale = _full_scale(image_bgr)
+    source = image_bgr[..., :3] if image_bgr.ndim == 3 and image_bgr.shape[2] == 4 else image_bgr
+    work = cv2.convertScaleAbs(source, alpha=255.0 / scale)
+    filled = backend(work, mask)
+    result = image_bgr.copy()
+    destination = result[..., :3] if image_bgr.ndim == 3 and image_bgr.shape[2] == 4 else result
+    _paste_scaled_uint8_fill(destination, filled, mask, scale, image_bgr.dtype)
+    return result
+
+
+def _paste_scaled_uint8_fill(
+    destination: NDArray[Any],
+    filled: NDArray[Any],
+    mask: NDArray[Any],
+    scale: float,
+    dtype: np.dtype[Any],
+) -> None:
+    """Scale uint8 fill pixels into a deeper destination, only inside ``mask``."""
+    hole = mask > 127
+    destination[hole] = np.clip(filled[hole].astype(np.float32) * (scale / 255.0), 0, scale).astype(dtype)
 
 
 def boxes_to_mask(
@@ -138,8 +192,16 @@ def erase_cv2(
     Accepts 1-/3-channel BGR (passed straight to ``cv2.inpaint``) and 4-channel
     BGRA: ``cv2.inpaint`` rejects 4 channels, so the alpha plane is split off,
     the BGR is inpainted, and alpha is re-attached unchanged.
+
+    A deeper-than-8-bit source is filled through :func:`_erase_via_uint8`: OpenCV's
+    inpaint takes 16-bit only as a single channel, so 16-bit colour would otherwise
+    raise a bare ``icvInpaint`` "Unsupported format" error.
     """
     flag = cv2.INPAINT_TELEA if method == "telea" else cv2.INPAINT_NS
+    if image_bgr.dtype == np.uint16 and image_bgr.ndim == 2:
+        return cv2.inpaint(image_bgr, mask, radius, flag)
+    if image_bgr.dtype != np.uint8:
+        return _erase_via_uint8(lambda img, m: erase_cv2(img, m, method=method, radius=radius), image_bgr, mask)
     if image_bgr.ndim == 3 and image_bgr.shape[2] == 4:
         bgr = cv2.inpaint(image_bgr[:, :, :3], mask, radius, flag)
         return np.dstack([bgr, image_bgr[:, :, 3]])
@@ -186,6 +248,13 @@ def erase_lama(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     back) and a BGRA alpha plane is split off and re-attached unchanged. Without
     this the ``cv2.cvtColor(..., BGR2RGB)`` below would crash on grayscale and
     silently drop alpha on BGRA.
+
+    Depth is carried end to end: the model works in float32, which is finer than any
+    integer source, so the normalisation divides by the SOURCE's full scale (65535 for
+    a 16-bit input, not a hardcoded 255) and the result is written back at the source
+    dtype. Dividing a 16-bit image by 255 pushed every value past 1.0 and the uint8
+    cast then wrapped it, which filled the mask with near-black pixels -- a silent
+    wrong answer rather than a crash.
     """
     if image_bgr.ndim == 2:
         bgr = erase_lama(cv2.cvtColor(image_bgr, cv2.COLOR_GRAY2BGR), mask)
@@ -211,18 +280,21 @@ def erase_lama(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     ch, cw = crop.shape[:2]
 
     # Resize crop + mask to the model size, normalize to [0,1] RGB CHW.
+    scale = _full_scale(image_bgr)
     crop_rs = cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA)
     mask_rs = cv2.resize(crop_mask, (size, size), interpolation=cv2.INTER_NEAREST)
-    img_in = cv2.cvtColor(crop_rs, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    img_in = cv2.cvtColor(crop_rs, cv2.COLOR_BGR2RGB).astype(np.float32) / scale
     img_in = np.transpose(img_in, (2, 0, 1))[None]  # (1,3,size,size)
     mask_in = (mask_rs > 127).astype(np.float32)[None, None]  # (1,1,size,size), 1=hole
 
     out = session.run(None, {img_name: img_in, mask_name: mask_in})[0]  # type: ignore[attr-defined]
     out = np.asarray(out)[0]  # (3,size,size)
     out = np.transpose(out, (1, 2, 0))
-    if float(out.max()) <= 1.5:  # model emits [0,1]; otherwise already [0,255]
-        out = out * 255.0
-    out = np.clip(out, 0, 255).astype(np.uint8)
+    if float(out.max()) <= 1.5:  # model emits [0,1]
+        out = out * scale
+    elif scale != 255.0:  # model emitted 8-bit levels; lift them to the source's scale
+        out = out * (scale / 255.0)
+    out = np.clip(out, 0, scale).astype(image_bgr.dtype)
     out_bgr = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
 
     # Resize back to crop size and paste only the masked pixels.
@@ -253,6 +325,26 @@ def _get_migan_session() -> object:
     return _get_session("migan", _MIGAN_REPO, _MIGAN_FILE, "MI-GAN ONNX")
 
 
+def _run_migan_crop(crop_bgr: NDArray[Any], crop_mask: NDArray[Any]) -> NDArray[Any]:
+    """Run MI-GAN on one already-bounded uint8 BGR crop."""
+    ch, cw = crop_bgr.shape[:2]
+    session = _get_migan_session()
+    inp = session.get_inputs()  # type: ignore[attr-defined]
+    img_name, mask_name = inp[0].name, inp[1].name
+
+    rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+    img_in = np.transpose(rgb, (2, 0, 1))[None].astype(np.uint8)  # (1,3,ch,cw)
+    # invert to MI-GAN polarity: 255 where KNOWN (keep), 0 where hole (erase)
+    known = (crop_mask <= 127).astype(np.uint8) * 255
+    mask_in = known[None, None]  # (1,1,ch,cw)
+
+    out = session.run(None, {img_name: img_in, mask_name: mask_in})[0]  # type: ignore[attr-defined]
+    res = np.transpose(np.asarray(out)[0], (1, 2, 0)).astype(np.uint8)  # (ch',cw',3) RGB
+    if res.shape[:2] != (ch, cw):
+        res = cv2.resize(res, (cw, ch), interpolation=cv2.INTER_LINEAR)
+    return cv2.cvtColor(res, cv2.COLOR_RGB2BGR)
+
+
 def erase_migan(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     """Inpaint ``mask`` (255 = erase) with MI-GAN via onnxruntime (CPU).
 
@@ -274,15 +366,10 @@ def erase_migan(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     convention -- so the mask is inverted before feeding the model. Feeding 255=hole
     regenerates the whole frame into stripes.
 
-    Accepts 1-channel (grayscale) and 4-channel (BGRA) input.
+    Accepts 1-channel (grayscale) and 4-channel (BGRA) input. Only the bounded crop
+    of a deeper source is narrowed to uint8 for the ONNX input, then its masked fill
+    is scaled directly into the source-depth result.
     """
-    if image_bgr.ndim == 2:
-        bgr = erase_migan(cv2.cvtColor(image_bgr, cv2.COLOR_GRAY2BGR), mask)
-        return cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    if image_bgr.ndim == 3 and image_bgr.shape[2] == 4:
-        bgr = erase_migan(np.ascontiguousarray(image_bgr[:, :, :3]), mask)
-        return np.dstack([bgr, image_bgr[:, :, 3]])
-
     h, w = image_bgr.shape[:2]
     # 2x the mark size (min 256 px) gives ample local context while a small corner
     # mask keeps the crop small regardless of the full image resolution; the crop is
@@ -292,31 +379,26 @@ def erase_migan(image_bgr: NDArray[Any], mask: NDArray[Any]) -> NDArray[Any]:
     if box is None:
         return image_bgr.copy()
     cx0, cy0, cx1, cy1 = box
-    crop = np.ascontiguousarray(image_bgr[cy0:cy1, cx0:cx1])
     crop_mask = mask[cy0:cy1, cx0:cx1]
-    ch, cw = crop.shape[:2]
-
-    session = _get_migan_session()
-    inp = session.get_inputs()  # type: ignore[attr-defined]
-    img_name, mask_name = inp[0].name, inp[1].name
-
-    rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-    img_in = np.transpose(rgb, (2, 0, 1))[None].astype(np.uint8)  # (1,3,ch,cw)
-    # invert to MI-GAN polarity: 255 where KNOWN (keep), 0 where hole (erase)
-    known = (crop_mask <= 127).astype(np.uint8) * 255
-    mask_in = known[None, None]  # (1,1,ch,cw)
-
-    out = session.run(None, {img_name: img_in, mask_name: mask_in})[0]  # type: ignore[attr-defined]
-    res = np.transpose(np.asarray(out)[0], (1, 2, 0)).astype(np.uint8)  # (ch',cw',3) RGB
-    if res.shape[:2] != (ch, cw):
-        res = cv2.resize(res, (cw, ch), interpolation=cv2.INTER_LINEAR)
-    out_bgr = cv2.cvtColor(res, cv2.COLOR_RGB2BGR)
+    source_crop = image_bgr[cy0:cy1, cx0:cx1]
+    crop_bgr = np.ascontiguousarray(to_bgr(source_crop))
+    scale = _full_scale(image_bgr)
+    work_bgr = crop_bgr if image_bgr.dtype == np.uint8 else cv2.convertScaleAbs(crop_bgr, alpha=255.0 / scale)
+    filled_bgr = _run_migan_crop(work_bgr, crop_mask)
 
     result = image_bgr.copy()
     region = result[cy0:cy1, cx0:cx1]
-    hole = crop_mask > 127
-    region[hole] = out_bgr[hole]
-    result[cy0:cy1, cx0:cx1] = region
+    if image_bgr.ndim == 2 or image_bgr.shape[2] == 1:
+        filled = cv2.cvtColor(filled_bgr, cv2.COLOR_BGR2GRAY)
+        destination = region if image_bgr.ndim == 2 else region[..., 0]
+    else:
+        destination = region[..., :3]
+        filled = filled_bgr
+    if image_bgr.dtype == np.uint8:
+        hole = crop_mask > 127
+        destination[hole] = filled[hole]
+    else:
+        _paste_scaled_uint8_fill(destination, filled, crop_mask, scale, image_bgr.dtype)
     return result
 
 
