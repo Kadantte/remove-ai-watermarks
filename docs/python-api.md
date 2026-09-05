@@ -123,10 +123,17 @@ import remove_ai_watermarks as raiw
 result = raiw.remove_all("input.png", "clean.png")   # -> RemoveAllResult
 print(result.output)          # the path written
 print(result.visible_label)   # the marks removed, or None
+print(result.visible_status)  # "no_watermark" | "cleaned" | "partial" | "unvalidated"
+for mark in result.visible_marks:
+    print(mark.label, mark.status, mark.confidence_before, mark.confidence_after)
 print(result.invisible)       # "removed" | "no-signal" | "unavailable"
 ```
 
-`invisible` is the field to check. `"unavailable"` means the GPU extra is not
+The visible status and per-mark records come from the same detector/fill/check
+pass as `remove_visible_detailed`; `remove_all` does not run another detector or
+fill. `partial` and `unvalidated` are quality statuses, not automatic retries.
+
+`invisible` is also important. `"unavailable"` means the GPU extra is not
 installed, so the output *looks* processed but still carries the watermark;
 `"no-signal"` means the scrub was deliberately skipped because nothing was
 locally detectable, which is a successful run.
@@ -198,10 +205,19 @@ end the run:
 summary = raiw.remove_batch("in_dir", "out_dir", mode="visible")   # -> BatchSummary
 print(summary.processed, summary.failed, summary.errors)
 print(summary.invisible_unavailable)   # outputs that still carry the watermark
+for item in summary.items:             # -> BatchItemResult
+    print(item.source, item.output, item.visible_status, item.error)
+    for mark in item.visible_marks:
+        print(mark.label, mark.status)
 ```
 
 `mode` is `all`, `visible`, `invisible`, or `metadata`. Pass a constructed
 `InvisibleEngine` as `engine` to load the model once for the whole directory.
+Visible and all items contain the aggregate visible status and lightweight
+per-mark records; image arrays are not retained in the batch summary. Other
+modes leave those two fields unset and empty. The original `BatchSummary`
+aggregate fields and `RemoveAllResult.visible_label` remain available for
+existing callers.
 
 ## Classify a photograph from pixels
 

@@ -20,6 +20,7 @@ class TestTopLevelExports:
     def test_lazy_reexports_resolve(self):
         from remove_ai_watermarks import openai_provenance
 
+        assert raiw.BatchItemResult is api.BatchItemResult
         assert raiw.remove_visible is api.remove_visible
         assert raiw.remove_visible_detailed is api.remove_visible_detailed
         assert raiw.VisibleRemovalResult is api.VisibleRemovalResult
@@ -327,6 +328,52 @@ class TestRemoveAllLibrary:
         monkeypatch.setattr(invisible_engine, "is_available", lambda: True)
         return FakeEngine()
 
+    def test_propagates_the_detailed_visible_result(self, monkeypatch, tmp_path):
+        from remove_ai_watermarks import image_io, invisible_engine, watermark_registry
+
+        image = np.full((96, 96, 3), 120, np.uint8)
+        source = tmp_path / "input.png"
+        assert image_io.imwrite(source, image)
+        mark = watermark_registry.MarkRemovalResult(
+            key="gemini",
+            label="Gemini visible watermark",
+            location="bottom-right",
+            region=(60, 60, 20, 20),
+            mask_bbox=(58, 58, 24, 24),
+            backend="cv2",
+            confidence_before=0.9,
+            confidence_after=0.7,
+            status="partial",
+            residual_region=(62, 62, 16, 16),
+        )
+        visible = watermark_registry.VisibleRemovalResult(image, (mark,))
+        detailed_calls: list[int] = []
+
+        def fake_detailed(*_args, **_kwargs):
+            detailed_calls.append(1)
+            return visible
+
+        monkeypatch.setattr(watermark_registry, "remove_auto_marks_detailed", fake_detailed)
+        monkeypatch.setattr(
+            watermark_registry,
+            "remove_auto_marks",
+            lambda *_a, **_k: pytest.fail("remove_all discarded the detailed visible result"),
+        )
+        monkeypatch.setattr(invisible_engine, "is_available", lambda: False)
+
+        result = api.remove_all(source, tmp_path / "output.png", backend="cv2")
+
+        assert result.visible_label == mark.label
+        assert result.visible_status == "partial"
+        assert result.visible_marks == (mark,)
+        assert detailed_calls == [1]
+
+    def test_legacy_result_constructor_remains_valid(self, tmp_path):
+        result = api.RemoveAllResult(tmp_path / "output.png", None, "no-signal")
+
+        assert result.visible_status is None
+        assert result.visible_marks == ()
+
     @pytest.mark.skipif(not DOUBAO.exists(), reason="doubao sample not present")
     def test_runs_all_three_stages_and_reports_each(self, monkeypatch, tmp_path):
         from remove_ai_watermarks import api
@@ -418,6 +465,59 @@ class TestRemoveAllLibrary:
 
 
 class TestRemoveBatchLibrary:
+    @pytest.mark.parametrize("mode", ["visible", "all"])
+    def test_records_each_visible_validation_result(self, monkeypatch, tmp_path, mode):
+        from remove_ai_watermarks import image_io, invisible_engine, watermark_registry
+
+        src = tmp_path / "in"
+        src.mkdir()
+        image = np.full((96, 96, 3), 120, np.uint8)
+        assert image_io.imwrite(src / "input.png", image)
+        mark = watermark_registry.MarkRemovalResult(
+            key="gemini",
+            label="Gemini visible watermark",
+            location="bottom-right",
+            region=(60, 60, 20, 20),
+            mask_bbox=(58, 58, 24, 24),
+            backend="cv2",
+            confidence_before=0.9,
+            confidence_after=None,
+            status="unvalidated",
+        )
+        visible = watermark_registry.VisibleRemovalResult(image, (mark,))
+        detailed_calls: list[int] = []
+
+        def fake_detailed(*_args, **_kwargs):
+            detailed_calls.append(1)
+            return visible
+
+        monkeypatch.setattr(watermark_registry, "remove_auto_marks_detailed", fake_detailed)
+        monkeypatch.setattr(
+            watermark_registry,
+            "remove_auto_marks",
+            lambda *_a, **_k: pytest.fail("batch discarded the detailed visible result"),
+        )
+        monkeypatch.setattr(invisible_engine, "is_available", lambda: False)
+
+        summary = api.remove_batch(src, tmp_path / "out", mode=mode, backend="cv2")
+
+        assert summary.processed == 1
+        assert summary.failed == 0
+        assert len(summary.items) == 1
+        item = summary.items[0]
+        assert item.source == src / "input.png"
+        assert item.output == tmp_path / "out" / "input.png"
+        assert item.mode == mode
+        assert item.visible_status == "unvalidated"
+        assert item.visible_marks == (mark,)
+        assert item.error is None
+        assert detailed_calls == [1]
+
+    def test_legacy_summary_constructor_remains_valid(self):
+        summary = api.BatchSummary(0, 0, [], [])
+
+        assert summary.items == ()
+
     @pytest.mark.skipif(not DOUBAO.exists(), reason="doubao sample not present")
     def test_visible_mode_writes_every_image(self, tmp_path):
         import shutil

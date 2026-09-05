@@ -560,6 +560,21 @@ def main(ctx: click.Context, verbose: bool) -> None:
 
 
 # ── Visible (Gemini) watermark removal ──
+def _print_visible_validation(status: str | None, marks: tuple[Any, ...], labels: str) -> None:
+    """Render one visible pass consistently across ``visible`` and ``all``."""
+    if status == "partial":
+        residuals = [mark.label for mark in marks if mark.status == "partial"]
+        console.print(
+            f"  Partial: fill completed for {labels}; overlapping residual still detected for {', '.join(residuals)}."
+        )
+    elif status == "unvalidated":
+        unavailable = [mark.label for mark in marks if mark.status == "unvalidated"]
+        console.print(f"  Filled: {labels}")
+        console.print(f"  Post-removal validation unavailable for: {', '.join(unavailable)}.")
+    elif status == "cleaned":
+        console.print(f"  Removed and validated: {labels}")
+
+
 def _run_visible_auto(
     source: Path,
     output: Path,
@@ -600,18 +615,7 @@ def _run_visible_auto(
         # write_noop=False means nothing was written, so a pre-existing output is intact.
         console.print(f"  No known visible mark detected. Checked: {', '.join(watermark_registry.mark_keys())}.")
         _no_visible_mark_exit(source)
-    if report.status == "partial":
-        residuals = [mark.label for mark in report.marks if mark.status == "partial"]
-        console.print(
-            f"  Partial: fill completed for {', '.join(removed)}; "
-            f"overlapping residual still detected for {', '.join(residuals)}."
-        )
-    elif report.status == "unvalidated":
-        unavailable = [mark.label for mark in report.marks if mark.status == "unvalidated"]
-        console.print(f"  Filled: {', '.join(removed)}")
-        console.print(f"  Post-removal validation unavailable for: {', '.join(unavailable)}.")
-    else:
-        console.print(f"  Removed and validated: {', '.join(removed)}")
+    _print_visible_validation(report.status, report.marks, ", ".join(removed))
     size_kb = output.stat().st_size / 1024
     console.print(f"  Saved: {output}  ({size_kb:.0f} KB, {elapsed:.2f}s)")
 
@@ -1724,6 +1728,8 @@ def cmd_all(
         console.print(f"  Error: {e}")
         raise SystemExit(1) from e
 
+    _print_visible_validation(outcome.visible_status, outcome.visible_marks, outcome.visible_label or "")
+
     # ── Done ──
     elapsed = time.monotonic() - t0
     size_kb = output.stat().st_size / 1024
@@ -1900,6 +1906,21 @@ def cmd_batch(
             console.print(f"  {failed_path.name}: {message}")
 
     console.print(f"\n  {processed} processed" + (f"  {errors} errors" if errors else ""))
+
+    status_order = ("no_watermark", "cleaned", "partial", "unvalidated")
+    counts = dict.fromkeys(status_order, 0)
+    for item in summary.items:
+        if item.visible_status is not None:
+            counts[item.visible_status] += 1
+    if sum(counts.values()):
+        details = ", ".join(f"{count} {status.replace('_', ' ')}" for status, count in counts.items() if count)
+        console.print(f"  Visible validation: {details}")
+        partial = counts["partial"]
+        unvalidated = counts["unvalidated"]
+        if partial:
+            console.print(f"  Warning: overlapping visible residual detected in {partial} output(s).")
+        if unvalidated:
+            console.print(f"  Post-removal validation unavailable for {unvalidated} output(s).")
 
     if synthid_skipped_count:
         # Mirror the single `all` command: a silently retained SynthID watermark is the

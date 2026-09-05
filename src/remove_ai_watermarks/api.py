@@ -27,7 +27,13 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from remove_ai_watermarks.watermark_registry import Backend, Sensitivity, VisibleRemovalResult
+    from remove_ai_watermarks.watermark_registry import (
+        Backend,
+        MarkRemovalResult,
+        Sensitivity,
+        VisibleRemovalResult,
+        VisibleRemovalStatus,
+    )
 
 
 def __getattr__(name: str) -> object:
@@ -295,11 +301,19 @@ InvisibleOutcome = Literal["removed", "no-signal", "unavailable"]
 
 @dataclass(frozen=True)
 class RemoveAllResult:
-    """Outcome of :func:`remove_all` -- what each stage actually did."""
+    """Outcome of :func:`remove_all`, including visible validation details.
+
+    ``visible_label`` preserves the original compact contract. ``visible_status`` and
+    ``visible_marks`` carry the aggregate and per-mark results from the same pass.
+    """
 
     output: Path
     visible_label: str | None  # the removed mark(s), or None when nothing fired
     invisible: InvisibleOutcome
+    # Optional defaults keep direct construction with the original three positional
+    # fields compatible. Results returned by remove_all always populate both fields.
+    visible_status: VisibleRemovalStatus | None = None
+    visible_marks: tuple[MarkRemovalResult, ...] = ()
 
 
 class MetadataStripIncomplete(RuntimeError):
@@ -437,6 +451,10 @@ def remove_all(
     prose: the caller owns the wording. The invisible stage reports its
     :data:`InvisibleOutcome`, plus a ``strength=<value>`` line before it runs.
 
+    The returned ``visible_status`` and ``visible_marks`` preserve the detailed
+    post-fill result from stage one. They do not add another detector or fill pass;
+    ``visible_label`` remains the compact compatibility field.
+
     Raises :class:`MetadataStripIncomplete` before writing anything when AI metadata
     survives, and ``OSError`` when the output cannot be written.
     """
@@ -468,12 +486,13 @@ def remove_all(
     staged = Path(tmp_name)
     try:
         # ── 1. Visible marks ──
-        result, removed = watermark_registry.remove_auto_marks(
+        visible = watermark_registry.remove_auto_marks_detailed(
             image,
             sensitivity=sensitivity,
             provenance=evidence.visible_provenance(),
             backend=backend,
         )
+        result, removed = visible.image, visible.labels
         visible_label = ", ".join(removed) if removed else None
         say("visible", visible_label or "")
         if not image_io.write_bgr_with_alpha(staged, result, alpha):
@@ -502,7 +521,7 @@ def remove_all(
     finally:
         if staged.exists():
             staged.unlink()
-    return RemoveAllResult(out, visible_label, outcome)
+    return RemoveAllResult(out, visible_label, outcome, visible.status, visible.marks)
 
 
 def _run_invisible(
@@ -580,9 +599,26 @@ def _run_invisible(
 BatchMode = Literal["all", "visible", "metadata", "invisible"]
 
 
+@dataclass(frozen=True, slots=True)
+class BatchItemResult:
+    """Outcome and visible validation details for one batch source."""
+
+    source: Path
+    output: Path | None
+    mode: BatchMode
+    visible_status: VisibleRemovalStatus | None = None
+    visible_marks: tuple[MarkRemovalResult, ...] = ()
+    invisible: InvisibleOutcome | None = None
+    error: str | None = None
+
+
 @dataclass(frozen=True)
 class BatchSummary:
-    """Per-directory outcome of :func:`remove_batch`."""
+    """Per-directory outcome of :func:`remove_batch`.
+
+    ``items`` keeps each file's stage outcomes and visible validation details without
+    retaining its image array in memory. The original aggregate fields remain intact.
+    """
 
     processed: int
     failed: int
@@ -590,6 +626,8 @@ class BatchSummary:
     # missing. Non-empty means the outputs LOOK processed but still carry it.
     invisible_unavailable: list[Path]
     errors: list[tuple[Path, str]]
+    # Optional default preserves the original four-positional-field constructor.
+    items: tuple[BatchItemResult, ...] = ()
 
 
 def remove_batch(
@@ -611,6 +649,11 @@ def remove_batch(
     directory. ``force`` and ``engine`` are threaded straight through, so a caller that
     passes a constructed ``InvisibleEngine`` loads the model once for the whole run.
 
+    ``items`` on the returned summary carries one :class:`BatchItemResult` per source.
+    Visible and all modes populate its ``visible_status`` and ``visible_marks`` from the
+    same once-filled pass; other modes and failures before that pass leave them None and
+    empty, respectively.
+
     ``progress`` receives ``(path, stage, detail)``. Every image ends with exactly one
     terminal stage -- ``done`` or ``failed`` -- whatever the mode does in between, so a
     caller driving a progress bar can advance on that alone.
@@ -627,23 +670,27 @@ def remove_batch(
     processed = failed = 0
     unavailable: list[Path] = []
     errors: list[tuple[Path, str]] = []
+    items: list[BatchItemResult] = []
     for img_path in sorted(p for p in src_dir.iterdir() if is_supported_format(p)):
         out_path = out_dir / img_path.name
         try:
-            outcome = _run_batch_one(img_path, out_path, mode, backend, sensitivity, invisible, force, engine, say)
+            result = _run_batch_one(img_path, out_path, mode, backend, sensitivity, invisible, force, engine, say)
         except Exception as exc:
             failed += 1
-            errors.append((img_path, str(exc)))
-            say(img_path, "failed", str(exc))
+            message = str(exc)
+            errors.append((img_path, message))
+            items.append(BatchItemResult(img_path, None, mode, error=message))
+            say(img_path, "failed", message)
             continue
         processed += 1
-        if outcome == "unavailable":
+        items.append(result)
+        if result.invisible == "unavailable":
             unavailable.append(img_path)
         # Exactly one terminal event per image, in every mode: a caller's progress bar
         # advances on this and nothing else. Keying it off a mode-specific stage line
         # left `visible` and `metadata` runs sitting at 0% for the whole batch.
-        say(img_path, "done", outcome or "")
-    return BatchSummary(processed, failed, unavailable, errors)
+        say(img_path, "done", result.invisible or "")
+    return BatchSummary(processed, failed, unavailable, errors, tuple(items))
 
 
 def _run_batch_one(
@@ -656,8 +703,8 @@ def _run_batch_one(
     force: bool,
     engine: Any | None,
     say: Callable[[Path, str, str], None],
-) -> InvisibleOutcome | None:
-    """One image, one mode. Returns the invisible outcome when that stage ran."""
+) -> BatchItemResult:
+    """Run one image in one mode and return its stage details."""
     from remove_ai_watermarks import image_io
     from remove_ai_watermarks.metadata import strip_and_verify
 
@@ -672,7 +719,14 @@ def _run_batch_one(
             engine=engine,
             progress=lambda stage, detail: say(img_path, stage, detail),
         )
-        return result.invisible
+        return BatchItemResult(
+            img_path,
+            out_path,
+            mode,
+            result.visible_status,
+            result.visible_marks,
+            result.invisible,
+        )
 
     # NOTE on holders in batch: `out_path` may EQUAL `img_path` (nothing forbids
     # `-o <the input directory>`), and the visible stage rewrites it. So each stage that
@@ -689,24 +743,22 @@ def _run_batch_one(
         # re-processed as if it were the input.
         from remove_ai_watermarks import watermark_registry
 
-        image, alpha = image_io.read_bgr_and_alpha(img_path)
-        if image is None:
-            raise ValueError(f"Could not read image: {img_path}")
-        result, _ = watermark_registry.remove_auto_marks(
-            image,
+        loaded = _load_visible_input(img_path)
+        visible = watermark_registry.remove_auto_marks_detailed(
+            loaded.bgr,
             sensitivity=sensitivity,
-            provenance=visible_provenance(img_path),
+            provenance=loaded.provenance,
             backend=backend,
         )
-        if not image_io.write_bgr_with_alpha(out_path, result, alpha):
+        if not image_io.write_bgr_with_alpha(out_path, visible.image, loaded.alpha):
             raise OSError(f"failed to write output (is the destination writable?): {out_path}")
-        return None
+        return BatchItemResult(img_path, out_path, mode, visible.status, visible.marks)
 
     if mode == "metadata":
         _, leftover = strip_and_verify(img_path, out_path)
         if leftover:
             raise MetadataStripIncomplete(set(leftover))
-        return None
+        return BatchItemResult(img_path, out_path, mode)
 
     # invisible-only: no preceding visible pass, so out_path does not exist yet, and
     # the input IS the pristine original for both the gate and the vendor probe.
@@ -726,4 +778,4 @@ def _run_batch_one(
         src_bgr, src_alpha = image_io.read_bgr_and_alpha(img_path)
         if src_bgr is None or not image_io.write_bgr_with_alpha(out_path, src_bgr, src_alpha):
             raise OSError(f"failed to copy input through to output: {out_path}")
-    return outcome
+    return BatchItemResult(img_path, out_path, mode, invisible=outcome)

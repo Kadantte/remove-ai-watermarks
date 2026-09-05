@@ -643,6 +643,10 @@ The command runs:
 3. AI metadata stripping.
 
 The visible options and diffusion options are also available on `all`.
+After the visible stage, `all` reports whether the once-filled result was
+validated as cleaned, still produced an overlapping residual (`Partial`), or
+could not be validated. These statuses do not trigger another fill and do not
+change the exit code by themselves.
 
 When the `qwen-zimage` extra is unavailable, `all` still writes the result of
 the visible and metadata stages, prints a prominent warning, and exits with code
@@ -679,6 +683,11 @@ remove-ai-watermarks batch ./images \
 The invisible and full modes accept the same main diffusion controls as their
 single image counterparts. Run `batch --help` for the authoritative option
 list.
+
+For `visible` and `all` modes, the final summary includes counts for
+`no watermark`, `cleaned`, `partial`, and `unvalidated`. Partial and unavailable
+validation results are printed explicitly, but the once-filled outputs are kept
+and the batch does not retry them automatically.
 
 ## Exit behavior
 

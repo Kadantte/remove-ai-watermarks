@@ -37,6 +37,7 @@ _warnings.filterwarnings("ignore", message=r".*ImageProcessorFast.*")
 __version__ = "0.37.1"
 
 __all__ = [
+    "BatchItemResult",
     "BatchSummary",
     "InvisibleOptions",
     "MetadataStripIncomplete",
@@ -62,6 +63,7 @@ __all__ = [
 
 if TYPE_CHECKING:
     from remove_ai_watermarks.api import (
+        BatchItemResult,
         BatchSummary,
         InvisibleOptions,
         MetadataStripIncomplete,
@@ -93,6 +95,7 @@ def __getattr__(name: str) -> object:
     """Lazily resolve the high-level API (PEP 562), so the heavy imports (cv2, the
     metadata/identify stack) load only when a caller actually reaches for them."""
     if name in (
+        "BatchItemResult",
         "BatchSummary",
         "InvisibleOptions",
         "MetadataStripIncomplete",

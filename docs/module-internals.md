@@ -97,8 +97,12 @@ and the image pipeline that the `all` and `batch` commands are thin wrappers
 over:
 
 - `remove_all`, returning a `RemoveAllResult` after the visible, invisible, and
-  metadata stages
-- `remove_batch`, returning a `BatchSummary` for one directory and one mode
+  metadata stages. Its legacy `visible_label` remains, while `visible_status`
+  and `visible_marks` retain the aggregate and per-mark post-fill result
+- `remove_batch`, returning a `BatchSummary` for one directory and one mode.
+  `items` contains one lightweight `BatchItemResult` per source, including the
+  same visible status and per-mark records for visible/all modes without keeping
+  image arrays alive across the directory
 - `InvisibleOptions`, the invisible stage's knobs as one immutable value. Engine
   knobs only, under the engine's own names and defaults, so a bare
   `InvisibleOptions()` behaves exactly like calling the engine with no arguments.
@@ -117,7 +121,11 @@ over:
 - `MetadataStripIncomplete`, raised before any write when AI metadata survives
 
 `remove_all` reports progress as `(stage, detail)` pairs of stable tokens, not
-prose the caller has to parse back.
+prose the caller has to parse back. Both pipeline entry points call
+`remove_auto_marks_detailed` directly; carrying validation into their result
+objects adds no detector or fill pass. The original positional constructors for
+`RemoveAllResult` and `BatchSummary` remain valid through defaulted appended
+fields.
 
 The package root exposes all of them lazily through
 [`__getattr__`](../src/remove_ai_watermarks/__init__.py), keeping a plain package

@@ -538,6 +538,35 @@ class TestAllCommand:
         assert result.exit_code == 0, result.output
         assert output.exists()
 
+    def test_all_reports_a_partial_visible_validation(self, runner, sample_png, tmp_path):
+        from remove_ai_watermarks.api import RemoveAllResult
+        from remove_ai_watermarks.watermark_registry import MarkRemovalResult
+
+        output = tmp_path / "clean.png"
+        mark = MarkRemovalResult(
+            key="gemini",
+            label="Gemini visible watermark",
+            location="bottom-right",
+            region=(10, 10, 20, 20),
+            mask_bbox=(10, 10, 20, 20),
+            backend="cv2",
+            confidence_before=0.9,
+            confidence_after=0.7,
+            status="partial",
+            residual_region=(12, 12, 10, 10),
+        )
+
+        def fake_remove_all(_source, destination, **_kwargs):
+            destination.write_bytes(sample_png.read_bytes())
+            return RemoveAllResult(destination, mark.label, "no-signal", "partial", (mark,))
+
+        with patch("remove_ai_watermarks.api.remove_all", side_effect=fake_remove_all):
+            result = runner.invoke(main, ["all", str(sample_png), "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        assert "overlapping residual still detected" in result.output
+        assert mark.label in result.output
+
     def test_all_cpu_offload_flows_to_engine(self, runner, sample_png, tmp_path):
         mock_cls, _mock_engine = _mock_invisible_engine()
         output = tmp_path / "clean.png"
@@ -578,22 +607,24 @@ class TestAllCommand:
         result = runner.invoke(main, ["all", "/nonexistent/file.png"])
         assert result.exit_code != 0
 
-    def test_all_visible_step_uses_registry(self, runner, sample_png, tmp_path):
+    def test_all_visible_step_uses_detailed_registry(self, runner, sample_png, tmp_path):
         """Regression (#1): the `all` visible step must route through the registry
-        (remove_auto_marks), so Doubao/Jimeng/Samsung/pill marks are handled -- not
-        just the Gemini sparkle via a hardcoded GeminiEngine."""
+        auto detector, so Doubao/Jimeng/Samsung/pill marks are handled -- not just the
+        Gemini sparkle via a hardcoded GeminiEngine -- and validation is preserved."""
+        from remove_ai_watermarks.watermark_registry import VisibleRemovalResult
+
         mock_cls, _mock_engine = _mock_invisible_engine()
         output = tmp_path / "clean.png"
 
         def _fake_remove_auto(image, **kwargs):
-            return image, []
+            return VisibleRemovalResult(image, ())
 
         with (
             patch("remove_ai_watermarks.cli.InvisibleEngine", mock_cls, create=True),
             patch("remove_ai_watermarks.invisible_engine.InvisibleEngine", mock_cls),
             patch("remove_ai_watermarks.invisible_engine.is_available", return_value=True),
             patch(
-                "remove_ai_watermarks.watermark_registry.remove_auto_marks", side_effect=_fake_remove_auto
+                "remove_ai_watermarks.watermark_registry.remove_auto_marks_detailed", side_effect=_fake_remove_auto
             ) as mock_auto,
         ):
             result = runner.invoke(main, ["all", str(sample_png), "-o", str(output), "--force"])
@@ -918,6 +949,43 @@ class TestBatchCommand:
         assert "3 processed" in result.output
         assert output_dir.exists()
         assert len(list(output_dir.glob("*.png"))) == 3
+
+    def test_batch_reports_visible_validation_counts(self, runner, tmp_path):
+        from remove_ai_watermarks.api import BatchItemResult, BatchSummary
+        from remove_ai_watermarks.watermark_registry import MarkRemovalResult
+
+        input_dir = _make_batch_dir(tmp_path, count=1)
+        source = input_dir / "img_0.png"
+        output_dir = tmp_path / "output"
+        mark = MarkRemovalResult(
+            key="gemini",
+            label="Gemini visible watermark",
+            location="bottom-right",
+            region=(10, 10, 20, 20),
+            mask_bbox=(10, 10, 20, 20),
+            backend="cv2",
+            confidence_before=0.9,
+            confidence_after=None,
+            status="unvalidated",
+        )
+        item = BatchItemResult(
+            source,
+            output_dir / source.name,
+            "visible",
+            "unvalidated",
+            (mark,),
+        )
+        summary = BatchSummary(1, 0, [], [], (item,))
+
+        with patch("remove_ai_watermarks.api.remove_batch", return_value=summary):
+            result = runner.invoke(
+                main,
+                ["batch", str(input_dir), "-o", str(output_dir), "--mode", "visible"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Visible validation: 1 unvalidated" in result.output
+        assert "validation unavailable for 1 output" in result.output
 
     def test_batch_metadata_mode(self, runner, tmp_path):
         input_dir = _make_batch_dir_with_metadata(tmp_path)
