@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from remove_ai_watermarks.invisible_engine import InvisibleEngine, _target_size, is_available
+from remove_ai_watermarks.invisible_engine import (
+    InvisibleEngine,
+    _apply_postprocessing,
+    _target_size,
+    is_available,
+)
 
 
 class TestIsAvailable:
@@ -264,7 +269,7 @@ class TestEngineResolvesThePolishPerProfile:
         seen: list[bool] = []
         monkeypatch.setattr(
             "remove_ai_watermarks.humanizer.adaptive_polish",
-            lambda out, ref, seed=None: (seen.append(True), out)[1],
+            lambda out, ref, seed=None, on_skip=None: (seen.append(True), out)[1],
         )
         src = tmp_path / f"{profile}_{requested}.png"
         Image.new("RGB", (32, 32), (90, 120, 150)).save(src)
@@ -283,3 +288,98 @@ class TestEngineResolvesThePolishPerProfile:
     def test_an_explicit_value_still_wins_on_both_profiles(self, tmp_path, monkeypatch):
         assert self._polish_used("qwen-zimage", True, tmp_path, monkeypatch) is True
         assert self._polish_used("sdxl-zimage", False, tmp_path, monkeypatch) is False
+
+
+class TestPostprocessingOrder:
+    """The stage order is a contract: grain last, so the polish still composes."""
+
+    @staticmethod
+    def _record(monkeypatch) -> list[str]:
+        seen: list[str] = []
+
+        def record(stage):
+            def stub(img, *_args, **_kwargs):
+                seen.append(stage)
+                return img
+
+            return stub
+
+        monkeypatch.setattr(
+            "remove_ai_watermarks.humanizer.unsharp_mask",
+            record("unsharp"),
+        )
+        monkeypatch.setattr(
+            "remove_ai_watermarks.humanizer.adaptive_polish",
+            record("polish"),
+        )
+        monkeypatch.setattr(
+            "remove_ai_watermarks.humanizer.apply_analog_humanizer",
+            record("humanize"),
+        )
+        return seen
+
+    def test_the_polish_runs_before_the_grain(self, monkeypatch):
+        import numpy as np
+
+        seen = self._record(monkeypatch)
+        img = np.zeros((16, 16, 3), dtype=np.uint8)
+        _apply_postprocessing(
+            img,
+            lambda: img,
+            humanize=6.0,
+            unsharp=0.5,
+            adaptive_polish=True,
+            orig_size=(16, 16),
+            seed=0,
+        )
+        # Grain last: humanize first is what silenced the polish (it reads grain as
+        # detail the image already has and self-limits to nothing).
+        assert seen == ["unsharp", "polish", "humanize"]
+
+    def test_the_reference_is_only_decoded_when_the_polish_needs_it(self, monkeypatch):
+        import numpy as np
+
+        self._record(monkeypatch)
+        img = np.zeros((16, 16, 3), dtype=np.uint8)
+        calls: list[int] = []
+
+        def reference():
+            calls.append(1)
+            return img
+
+        _apply_postprocessing(
+            img, reference, humanize=6.0, unsharp=0.5, adaptive_polish=False, orig_size=(16, 16), seed=0
+        )
+        assert calls == []
+        _apply_postprocessing(
+            img, reference, humanize=0.0, unsharp=0.0, adaptive_polish=True, orig_size=(16, 16), seed=0
+        )
+        assert calls == [1]
+
+    def test_the_resize_happens_before_every_filter(self, monkeypatch):
+        import numpy as np
+
+        seen = self._record(monkeypatch)
+        sizes: list[tuple[int, int]] = []
+
+        def record_unsharp(img, *_args, **_kwargs):
+            seen.append("unsharp")
+            sizes.append(img.shape[:2])
+            return img
+
+        monkeypatch.setattr(
+            "remove_ai_watermarks.humanizer.unsharp_mask",
+            record_unsharp,
+        )
+        out = _apply_postprocessing(
+            np.zeros((8, 8, 3), dtype=np.uint8),
+            lambda: np.zeros((16, 16, 3), dtype=np.uint8),
+            humanize=0.0,
+            unsharp=0.5,
+            adaptive_polish=False,
+            orig_size=(16, 16),
+            seed=0,
+        )
+        # Grain and sharpening belong at output resolution, not smeared by a later upscale.
+        assert sizes == [(16, 16)]
+        assert out.shape[:2] == (16, 16)
