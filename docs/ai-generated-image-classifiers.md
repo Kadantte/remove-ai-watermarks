@@ -831,6 +831,100 @@ Do not add receipts to CLIP-L train. Next: a layout-first router into an
 OCR specialist, with thermal CORD still uncovered at a photo-safe cut.
 Artifacts: `receipt-layout-gate-2026-08-31/report.json`.
 
+In-the-wild confirmation, 2026-09-02: 59 user-donated phone captures of real
+receipts (2026-03 to 2026-05, 4032x3024 main-camera JPEG with device EXIF
+stripped by the scanning-app export; private eval-only corpus, not for
+redistribution) put frozen Model 1 DEFINITELY on **19/59 (32.2%)** and
+POSSIBLY on 6/59 (10.2%), with human on 34/59 (57.6%); of the 19 false
+verdicts 11 carry a provider, every one `tc260`, the same stray-provider
+artifact measured across structured documents. Full-resolution modern phone
+captures fail at a third where CORD fails at nine tenths, so the
+capture-quality split holds outside curated datasets, and a photographed
+receipt stays outside the supported contract. The corpus remains an eval
+cell, not CLIP-L negatives, per the 2026-08-27 decision above. Artifacts:
+`receipts-phone-eval-2026-09-02/report.json`.
+
+The 2026-09-02 router pilot then measured every pre-CLIP routing signal
+against that field cell (59 phone captures, CORD, FUNSD, a 300-photo
+control, 1,847 local ai_test rows). The rebuilt line-count probe
+(calibrated to the 2026-08-31 anchors: CORD median 6, photos median 1,
+CORD >= 11 lines 16.2%, photos 0.7%) puts field receipts at **median 4
+lines**, on top of the photo distribution: at the photo-safe cut `n_lines
+>= 11` it gates **5/59 phone receipts and 2/19 actual false DEFINITELY
+verdicts**, and every lower cut trades tens of percent of photo/AI loss
+for coverage. An eight-feature morphology battery (line count, ink density,
+vertical span, column spread, background statistics) caps at **CV AUC
+0.706** for phone receipts versus photos+AI, 41.9% false-gating at 80%
+recall: handcrafted layout is structurally dead on field captures. OCR
+text density is not: PaddleOCR det+rec (conf >= 0.8) reads a median **926
+characters on a phone receipt versus 0 on the median photo or AI image**,
+and a gate at **chars >= 500 covers 57/59 field receipts (96.6%), 19/19
+of the observed false-DEFINITELY failures, at 1/150 photos (0.7%) and
+3/100 ai_test (3.0%) routed away**; the two uncovered receipts already
+pass as human. FUNSD forms gate at 80.7%. The low-resolution capture cell
+stays uncovered by every measured signal: CORD's small photos read a
+median 107 characters (0% gated), and the scale-invariant alternative,
+text-box area fraction, is rejected because text-heavy AI posters put it
+at 19-40% AI false-gating at phone-safe cuts. Artifacts:
+`receipt-router-pilot-2026-09-02/report.json`.
+
+The same day closed the no-OCR paths. A synthetic-receipt generator
+(thermal render plus perspective, crumple, sensor, and JPEG degradation)
+failed to transfer in both feature spaces: the 124-d residual gate trained
+on it covers **0/19** observed false verdicts at 19.8% photo false-gating
+(residual sensor statistics are not reproducible by rendering), and in
+CLIP space only 24.7% of renders land on the phone-receipt side
+(synthetic-only head recall 1.7%). Real receipts, however, separate
+perfectly in CLIP 768-d: a linear head on the embedding Model 1 already
+computes puts **min(59 phone receipts) above max(1,847 ai_test rows)**
+(14.03 versus 13.87), covering 59/59 receipts and 19/19 observed false
+verdicts at 0/1,847 AI cost in-sample; leave-one-out holds ~95% at a
+conservative threshold. The gate would run only on DEFINITELY, where the
+comparison set is AI images alone, and a hit downgrades `ai` to `unknown`:
+no OCR, no new dependency, negligible runtime cost. The blocker is data
+policy, not modeling: the only real phone-receipt pixels are the 59-file
+eval corpus, and training on it would be training on the test set (the
+meme-leak lesson). Shipping honestly needs a disjoint train source: a
+second user donation as a train corpus (cleanest), or a CORD train split
+re-download for the low-res cell. Artifacts:
+`receipt-124d-gate-2026-09-02/report.json`.
+
+The shipped gate resolved that fork with public data. CORD-v2 was
+re-fetched from Hugging Face (train 800, validation 100, test 100; CC BY
+4.0); the project eval cell was verified to be exactly the test split
+(cos 1.0000 on all 99), so the train split is disjoint by construction. A
+linear CLIP head trained on CORD train alone covers 100% of CORD but only
+73.7% of the field false verdicts; adding 200 synthetic capture-style
+receipts as positives bridges the style gap. Final configuration: CORD
+train + 200 synthetic + 2,400 ai_train negatives, threshold certified as
+the min of the 1st-percentile scores on CORD validation and a 100-image
+synthetic holdout (2.0433). Frozen eval: **57/59 field receipts gated,
+false `ai` 19/59 -> 2/59, CORD 89/99 -> 0/99, ai_test DEFINITELY cost
+7/1,847 (0.38%)**. No field-receipt pixels were used for training or the
+threshold; the two misses sit below any certified threshold and stay open.
+Shipped 2026-09-02 in `classify.py` as a DEFINITELY-path gate on the same
+CLIP vector (asset `receipt-gate-2026-09-02.npz`, operating point updated);
+train corpus `cord-train-2026-09-02/`, artifacts
+`receipt-gate-shipped-2026-09-02/report.json`.
+
+Open tails from the same day, all measured. (1) The two field misses sit
+at gate scores -0.15 and -0.09 against the certified 2.043 threshold;
+covering them would need a threshold at -0.153, raising the ai_test
+false-gate cost from 0.38% to 0.65%. The threshold stands: they are the
+retrain tail, not a re-cut. (2) The `fw5nxt` train row that reads `human`
+at inference is not a pipeline bug: cached-embedding audit of all 4,089
+detector_ai_train rows puts DEFINITELY recall on train at **96.4%**
+(61 rows likely_human), and that row sits at the 2nd ridge and 1.3rd MLP
+percentiles of train - the AND gate's documented recall contract applies
+to train rows too. (3) Renderer drift is now a corpus:
+`aigen-drift-2026-09-02/` holds the 34 user generations verified absent
+from the freeze catalog. ChatGPT May-June: 5/6 named `openai`; ChatGPT
+Aug 9: **5/12 named, 3 `human`, 1 `unknown`**; Gemini: 11/15 named
+`google`; grok: `ai` with no provider, correct by design. Eval-only until
+the next provider retrain promotes rows. Artifacts:
+`receipt-gate-shipped-2026-09-02/report.json` (open_two_misses),
+`aigen-drift-2026-09-02/manifest.json`.
+
 Batch-1 then filled four more unmeasured domains under the same sieves
 (428→421 rows after phantom repair: UI screenshots, 150; Danbooru community
 digital art, 145; software-rendered matplotlib charts, 82; OpenStreetMap

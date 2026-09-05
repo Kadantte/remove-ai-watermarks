@@ -7,10 +7,14 @@ superseded experiments live in the research archive listed in
 ## Pixel classification
 
 `classify` / `classify_pixels` is AI versus camera, not a universal AI detector.
-Receipts, UI screenshots, and digital art are out of contract: a thermal receipt
-can score as AI, a photorealistic AI receipt as human. POSSIBLY is reported as
-`unknown`. Provider attribution runs only after DEFINITELY and can abstain when
-124-d extraction refuses the file. Microsoft is not a pixel class.
+UI screenshots and digital art are out of contract. Receipt photographs are
+abstained by the 2026-09-02 receipt gate on DEFINITELY: they report `unknown`
+with `detector=definitely` instead of a false `ai` (field measurements:
+19/59 false verdicts before, 2/59 after; CORD 89/99 before, 0/99 after; the
+gate abstains on 7/1,847 ai_test images). A photorealistic AI receipt can
+still score as `human`. POSSIBLY is reported as `unknown`. Provider
+attribution runs only after DEFINITELY and can abstain when 124-d extraction
+refuses the file. Microsoft is not a pixel class.
 
 The command is never started by `identify`. A no-signal provenance result stays
 unknown. This is not a clean verdict and it does not run cleanup. Full guide:

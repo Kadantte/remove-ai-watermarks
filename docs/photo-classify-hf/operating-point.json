@@ -34,6 +34,17 @@
     },
     "runs_only_after": "definitely"
   },
+  "receipt_gate": {
+    "added": "2026-09-02",
+    "asset": "receipt-gate-2026-09-02.npz",
+    "threshold": 2.0432573877459697,
+    "runs_only_after": "definitely",
+    "on_hit": "unknown",
+    "head": "linear on the CLIP-L-ft 768-d vector Model 1 already computes",
+    "train": "CORD-v2 train 800 (CC BY 4.0) + 200 synthetic receipts + 2400 ai_train negatives",
+    "certified": "min of 1st-percentile scores on CORD validation and a synthetic holdout; no field-receipt pixels in training or threshold selection",
+    "measured": "field receipts false-AI 19/59 -> 2/59; CORD 89/99 -> 0/99; ai_test DEFINITELY cost 7/1847"
+  },
   "files": [
     "clip-l-ft.pt",
     "probe-weights-clip-l-ft.npz",

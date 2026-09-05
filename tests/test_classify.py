@@ -15,6 +15,8 @@ from PIL import Image
 from remove_ai_watermarks.classify import (
     MLP_THRESHOLD,
     PROVIDER_MARGIN,
+    RECEIPT_GATE_FILE,
+    RECEIPT_GATE_THRESHOLD,
     RIDGE_THRESHOLD,
     WEIGHTS_REPO,
     WEIGHTS_REVISION,
@@ -23,6 +25,7 @@ from remove_ai_watermarks.classify import (
     detector_level,
     label_for,
     provider_from_scores,
+    receipt_gate_score,
 )
 from remove_ai_watermarks.cli import main
 
@@ -61,6 +64,10 @@ def test_shipped_operating_point_matches_the_runtime_defaults() -> None:
     assert payload["model2"]["class_kind"]["tc260"] == "label-standard"
     assert payload["model2"]["class_kind"]["muse-image"] == "model"
     assert payload["model2"]["checkpoint_keys"]["muse-image"] == "meta_muse_image"
+    assert payload["receipt_gate"]["threshold"] == RECEIPT_GATE_THRESHOLD
+    assert payload["receipt_gate"]["asset"] == RECEIPT_GATE_FILE
+    assert payload["receipt_gate"]["runs_only_after"] == "definitely"
+    assert payload["receipt_gate"]["on_hit"] == "unknown"
 
 
 def test_definitely_is_the_and_of_ridge_and_mlp() -> None:
@@ -117,6 +124,95 @@ def test_likely_human_does_not_run_provider() -> None:
     assert result.label == "human"
     assert result.detector == "likely_human"
     assert result.provider is None
+
+
+def test_shipped_receipt_gate_asset_matches_the_pinned_threshold() -> None:
+    payload = np.load(Path("src/remove_ai_watermarks/assets") / RECEIPT_GATE_FILE)
+    assert float(payload["threshold"]) == RECEIPT_GATE_THRESHOLD
+    assert payload["w"].shape == (768,)
+    assert payload["mu"].shape == (768,)
+    assert payload["sd"].shape == (768,)
+
+
+def test_receipt_gate_downgrades_definitely_to_unknown() -> None:
+    result = classify_from_scores(1.0, 10.0, _scores(openai=9.0, no_ai=0.0), receipt_score=RECEIPT_GATE_THRESHOLD + 1.0)
+    assert result.label == "unknown"
+    assert result.detector == "definitely"
+    assert result.provider is None
+
+
+def test_receipt_gate_below_threshold_keeps_ai_and_provider() -> None:
+    result = classify_from_scores(
+        1.0,
+        10.0,
+        _scores(openai=1.0, no_ai=0.0),
+        receipt_score=RECEIPT_GATE_THRESHOLD - 0.01,
+    )
+    assert result.label == "ai"
+    assert result.provider == "openai"
+
+
+@pytest.mark.parametrize(
+    ("ridge", "mlp", "expected"),
+    [(1.0, 0.0, "unknown"), (0.0, 0.0, "human")],
+)
+def test_receipt_gate_never_touches_non_definitely(ridge: float, mlp: float, expected: str) -> None:
+    result = classify_from_scores(ridge, mlp, None, receipt_score=99.0)
+    assert result.label == expected
+
+
+def test_receipt_gate_score_is_deterministic_and_bounded() -> None:
+    v = np.full(768, 1.0 / np.sqrt(768), dtype=np.float64)
+    first = receipt_gate_score(v)
+    assert first == receipt_gate_score(v)
+    assert -50.0 < first < 50.0
+
+
+def _patch_definitely_runtime(monkeypatch: pytest.MonkeyPatch, *, forensic_calls: list[int]) -> None:
+    """Patch classify internals so a plain PNG scores DEFINITELY on Model 1."""
+    runtime = SimpleNamespace(
+        ridge_mean=np.zeros(768),
+        ridge_scale=np.ones(768),
+        ridge_weights=np.full(768, 0.01),
+        ridge_threshold=RIDGE_THRESHOLD,
+        mlp_threshold=MLP_THRESHOLD,
+        provider_margin=PROVIDER_MARGIN,
+    )
+    monkeypatch.setattr("remove_ai_watermarks.classify.is_available", lambda: True)
+    monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device: runtime)
+    monkeypatch.setattr("remove_ai_watermarks.classify._embed", lambda *args, **kwargs: np.full(768, 100.0))
+    monkeypatch.setattr("remove_ai_watermarks.classify._mlp_score", lambda *args, **kwargs: 10.0)
+    monkeypatch.setattr(
+        "remove_ai_watermarks.classify._forensic",
+        lambda image: forensic_calls.append(1) or np.zeros(124),
+    )
+
+
+def test_receipt_gate_hit_skips_the_124d_forensics(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[int] = []
+    _patch_definitely_runtime(monkeypatch, forensic_calls=calls)
+    monkeypatch.setattr(
+        "remove_ai_watermarks.classify.receipt_gate_score", lambda *args, **kwargs: RECEIPT_GATE_THRESHOLD + 5.0
+    )
+    result = classify_pixels(_plain_png(tmp_path))
+    assert result.label == "unknown"
+    assert result.detector == "definitely"
+    assert calls == []
+
+
+def test_receipt_gate_miss_still_runs_the_124d_forensics(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[int] = []
+    _patch_definitely_runtime(monkeypatch, forensic_calls=calls)
+    monkeypatch.setattr(
+        "remove_ai_watermarks.classify._provider_scores",
+        lambda runtime, forensic: _scores(),
+    )
+    monkeypatch.setattr(
+        "remove_ai_watermarks.classify.receipt_gate_score", lambda *args, **kwargs: RECEIPT_GATE_THRESHOLD - 5.0
+    )
+    result = classify_pixels(_plain_png(tmp_path))
+    assert result.label == "ai"
+    assert calls == [1]
 
 
 @pytest.mark.parametrize("caller", ["identify", "has_invisible_target"])

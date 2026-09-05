@@ -22,7 +22,9 @@ Two heads, one call. Model 1 decides whether a **photograph** looks generated
 or camera-like. Model 2 names a provider only after Model 1 is DEFINITELY AI.
 
 This is not a SynthID decoder. It is not provenance. It is not a universal
-"AI or not" detector for receipts, UI, or digital art. The Python package
+"AI or not" detector for UI or digital art. Receipt photographs are
+detected by the bundled receipt gate and abstain to `unknown` rather than
+a false `ai`. The Python package
 [`remove-ai-watermarks`](https://github.com/wiltodelta/remove-ai-watermarks)
 loads these files through an explicit `classify` extra. `identify` never
 starts this model, including after a no-signal metadata scan.
@@ -57,10 +59,12 @@ Content embeddings and forensic residuals answer different questions.
 
 CLIP-L, after a light vision-block fine-tune, separates **generated
 photographs** from **camera photographs**. It does not reliably separate
-generated photographs from receipts, UI, charts, or illustration. A ridge
-trained on that embedding at a 1% Open Images false-positive cut is the
-strongest Model 1 we measured. A small MLP on the same vectors, ANDed with
-the ridge, is the freeze DEFINITELY gate.
+generated photographs from UI, charts, or illustration; receipts live
+inside the AI region too, which is why the shipped receipt gate (below)
+abstains them on the DEFINITELY path instead of trying to fix Model 1. A
+ridge trained on that embedding at a 1% Open Images false-positive cut is
+the strongest Model 1 we measured. A small MLP on the same vectors, ANDed
+with the ridge, is the freeze DEFINITELY gate.
 
 The 124-d bank is a different feature: patch-local residual ratios (FFT band
 energy, comb contrast, autocovariance) on 256 px tiles. On that bank, OpenAI
@@ -76,14 +80,20 @@ flowchart TD
   image[Photograph] --> m1[Model 1: CLIP-L-ft ridge AND MLP]
   m1 -->|likely_human| human[label human, provider none]
   m1 -->|possibly| unk[label unknown, provider none]
-  m1 -->|definitely| m2[Model 2: 124-d one-vs-rest focal]
+  m1 -->|definitely| rg[Receipt gate on the same CLIP vector]
+  rg -->|receipt document| rgu[label unknown, detector definitely]
+  rg -->|not a receipt| m2[Model 2: 124-d one-vs-rest focal]
   m2 -->|openai google muse-image tc260| named[label ai plus provider]
   m2 -->|no_ai or extract fail| aiOnly[label ai, provider none]
 ```
 
-CLIP content space is the wrong place to train "receipt versus rest" or
-"UI versus rest" if the product contract is photographic. Those domains
-remain open. The shipped heads do not include a receipt specialist.
+CLIP content space is the wrong place to train "UI versus rest" if the
+product contract is photographic; that domain remains open. For receipts a
+narrower question is solvable in CLIP space: receipts versus AI on the
+DEFINITELY path separates perfectly, and the bundled receipt gate (linear
+head, CORD-v2 train plus synthetic capture-style positives, threshold
+certified on held-out validation) answers it. It abstains to `unknown`;
+it is not a receipt-versus-rest specialist and adds no provider class.
 
 Provider attribution tracks the **renderer**, not the front-end. Bing Image
 Creator rows signed Microsoft, OpenAI score as `openai`. Designer rows signed
@@ -178,9 +188,12 @@ DEF) at a small recall cost.
 
 ## Limitations
 
-- **Photographs only.** Receipts, UI, scans of forms, maps, and community
-  digital art sit in the AI region of CLIP-L. A real thermal receipt can
-  score as AI. A photorealistic AI receipt can score as human.
+- **Photographs only.** UI, scans of forms, maps, and community digital art
+  sit in the AI region of CLIP-L. Receipt photographs are abstained by the
+  2026-09-02 receipt gate: they report `unknown` with `detector=definitely`
+  instead of a false `ai` (field false-AI fell from 19/59 to 2/59, CORD
+  89/99 to 0/99, at a 7/1,847 ai_test cost). A photorealistic AI receipt
+  can still score as `human`.
 - **Not SynthID.** A `provider=openai` result means the pixels look like an
   OpenAI-rendered photograph, not that a payload was decoded.
 - **Not provenance.** C2PA, IPTC, and visible marks stay on `identify`.

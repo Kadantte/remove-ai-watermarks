@@ -14,8 +14,11 @@ Campaign notes and rejected variants live in
 Use `identify` for C2PA, IPTC, visible marks, and other provenance. Use
 `classify` when those signals are gone and the file is still a photograph.
 
-Do not use `classify` to prove a file is clean. Do not use it on receipts, UI,
-or digital art. Do not treat `provider=openai` as a decoded SynthID payload.
+Do not use `classify` to prove a file is clean. Do not use it on UI or
+digital art. Receipt photographs are detected by the receipt-document gate
+and abstain to `unknown` instead of a false `ai`; they are still not a
+supported verdict. Do not treat `provider=openai` as a decoded SynthID
+payload.
 
 ## Install and run
 
@@ -46,14 +49,17 @@ catalog is not published with the package.
 
 ## What one call returns
 
-One request runs both heads. Model 2 runs only after Model 1 is DEFINITELY.
+One request runs both heads. The receipt gate and Model 2 run only after
+Model 1 is DEFINITELY.
 
 ```mermaid
 flowchart TD
   image[Photograph] --> m1[Model 1 CLIP-L-ft ridge AND MLP]
   m1 -->|likely_human| human["label human, provider none"]
   m1 -->|possibly| unk["label unknown, provider none"]
-  m1 -->|definitely| m2[Model 2 124-d focal heads]
+  m1 -->|definitely| rg[Receipt gate on the same CLIP vector]
+  rg -->|receipt document| rgu["label unknown, detector definitely, provider none"]
+  rg -->|not a receipt| m2[Model 2 124-d focal heads]
   m2 -->|openai google muse-image tc260| named["label ai plus provider"]
   m2 -->|no_ai or extract fail| aiOnly["label ai, provider none"]
 ```
@@ -64,6 +70,10 @@ flowchart TD
 | `domain` | `photo` | This freeze is photographic only |
 | `detector` | `definitely`, `possibly`, `likely_human` | Raw Model 1 gate |
 | `provider` | `openai`, `google`, `muse-image`, `tc260`, or `None` | Model 2, only if `label` is `ai` |
+
+`unknown` with `detector=definitely` is the receipt-document gate abstaining:
+the file looked AI-generated to Model 1 and like a receipt photograph to the
+gate, so no verdict is published and no provider is read.
 
 `human` is camera-like under this contract, not a proof of authorship.
 `unknown` is POSSIBLY, or a domain this freeze does not support. `provider=None`
@@ -108,9 +118,31 @@ Two CPU retrains were byte-identical. DEFINITELY is the shipped cut.
 
 The ungated meme row is why Model 2 never runs on `human` or `unknown`.
 
+## Receipt-document gate
+
+Added 2026-09-02. A linear head on the CLIP-L-ft vector Model 1 already
+computes, trained on CORD-v2 train (800, CC BY 4.0) plus 200 synthetic
+capture-style receipts against 2,400 ai_train negatives. The threshold is
+certified on CORD validation plus a synthetic holdout; no field-receipt
+pixels were used for training or the threshold. On DEFINITELY only: a hit
+publishes `unknown` and skips the 124-d provider pass.
+
+| Cell | Result |
+| --- | ---: |
+| Field phone receipts, false `ai` before | 19/59 -> **2/59** |
+| Field phone receipts, gated to `unknown` | 57/59 |
+| CORD photographs (99) | **0/99** false `ai` |
+| ai_test DEFINITELY cost | 7/1,847 (0.38%) |
+
+Artifacts: `receipt-gate-shipped-2026-09-02/report.json` (private research
+tree). The head ships in the package assets; the operating point records it
+in [photo-classify-hf/operating-point.json](photo-classify-hf/operating-point.json).
+
 ## Limits
 
-- Receipts, UI, scans, maps, and community art are out of contract.
+- Receipts abstain through the 2026-09-02 gate (below); a photorealistic AI
+  receipt can still score as `human`. UI, scans, maps, and community art
+  remain out of contract.
 - Not SynthID, not C2PA, not `is_ai_generated`.
 - Images under 256 px cannot yield 124-d features, so provider abstains.
 - FLUX is a hold-out at 83% DEF, not a named provider class.

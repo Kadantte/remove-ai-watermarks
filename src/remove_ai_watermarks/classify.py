@@ -29,6 +29,14 @@ PROVIDER_FILE = "provider.pt"
 OPERATING_POINT_FILE = "operating-point.json"
 _WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 
+# 2026-09-02 receipt-document gate: linear head on the same CLIP-L-ft
+# vector, trained on CORD-v2 train (800, CC BY 4.0) plus 200 synthetic
+# capture-style receipts against 2,400 ai_train negatives. Threshold is the
+# min of the 1st-percentile scores on CORD validation and a synthetic
+# holdout; no field-receipt pixels were used for training or the threshold.
+RECEIPT_GATE_FILE = "receipt-gate-2026-09-02.npz"
+RECEIPT_GATE_THRESHOLD = 2.0432573877459697
+
 # 2026-08-31 freeze operating point. Ridge threshold is also in the probe file;
 # the runtime prefers the file when weights load.
 MLP_THRESHOLD = 5.9586493237495395
@@ -53,6 +61,34 @@ PUBLIC_PROVIDER: dict[str, PixelProvider] = {
 
 _runtime: _Runtime | None = None
 _runtime_lock = threading.Lock()
+_receipt_gate: dict[str, Any] | None = None
+
+
+def _load_receipt_gate() -> dict[str, Any]:
+    """Load the bundled receipt-gate head once (numpy-only, no download)."""
+    global _receipt_gate
+    if _receipt_gate is None:
+        import numpy as np
+
+        payload = np.load(Path(__file__).parent / "assets" / RECEIPT_GATE_FILE)
+        _receipt_gate = {
+            "w": np.asarray(payload["w"], dtype=np.float64),
+            "b": float(payload["b"]),
+            "mu": np.asarray(payload["mu"], dtype=np.float64),
+            "sd": np.asarray(payload["sd"], dtype=np.float64),
+            "threshold": float(payload["threshold"]),
+        }
+    return _receipt_gate
+
+
+def receipt_gate_score(clip_vector: Any) -> float:
+    """Receipt-document score of a CLIP-L-ft vector; higher is more receipt-like."""
+    import numpy as np
+
+    g = _load_receipt_gate()
+    v = np.asarray(clip_vector, dtype=np.float64).ravel()
+    v = v / (np.linalg.norm(v) + 1e-12)
+    return float((((v - g["mu"]) / g["sd"]) @ g["w"]) + g["b"])
 
 
 @dataclass(frozen=True)
@@ -125,8 +161,15 @@ def classify_from_scores(
     ridge_threshold: float = RIDGE_THRESHOLD,
     mlp_threshold: float = MLP_THRESHOLD,
     provider_margin: float = PROVIDER_MARGIN,
+    receipt_score: float | None = None,
+    receipt_threshold: float = RECEIPT_GATE_THRESHOLD,
 ) -> PixelClassification:
-    """Pure gate: detector AND provider, no file I/O."""
+    """Pure gate: detector AND provider, no file I/O.
+
+    A DEFINITELY verdict whose ``receipt_score`` meets ``receipt_threshold``
+    downgrades the public label to ``unknown`` (document-domain abstain):
+    the raw detector level stays ``definitely`` and no provider is read.
+    """
     level = detector_level(
         ridge_score,
         mlp_score,
@@ -134,6 +177,8 @@ def classify_from_scores(
         mlp_threshold=mlp_threshold,
     )
     label = label_for(level)
+    if level == "definitely" and receipt_score is not None and receipt_score >= receipt_threshold:
+        return PixelClassification(label="unknown", domain="photo", detector=level, provider=None)
     provider: PixelProvider | None = None
     if label == "ai" and provider_scores is not None:
         provider = provider_from_scores(provider_scores, margin=provider_margin)
@@ -141,7 +186,11 @@ def classify_from_scores(
 
 
 def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassification:
-    """Run Model 1 then, on DEFINITELY, Model 2. Never called by ``identify``."""
+    """Run Model 1 then, on DEFINITELY, the receipt gate and Model 2.
+
+    Never called by ``identify``. A DEFINITELY verdict that the receipt gate
+    accepts is published as ``unknown`` before the 124-d provider pass.
+    """
     if not is_available():
         raise RuntimeError(f"pixel classification requires the classify extra. Install: pip install {CLASSIFY_EXTRA}")
     runtime = _get_runtime(device)
@@ -158,21 +207,28 @@ def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassifica
             ridge_threshold=runtime.ridge_threshold,
             mlp_threshold=runtime.mlp_threshold,
         )
+        gate = _load_receipt_gate()
+        r_score = receipt_gate_score(clip_vector) if level == "definitely" else None
         provider_scores = None
-        if level == "definitely":
+        if r_score is not None and r_score < gate["threshold"]:
             forensic = _forensic(rgb)
             if forensic is not None:
                 provider_scores = _provider_scores(runtime, forensic)
             else:
                 log.info("124-d features unavailable for %s, provider abstains", path)
-    return classify_from_scores(
+    result = classify_from_scores(
         ridge,
         mlp,
         provider_scores,
         ridge_threshold=runtime.ridge_threshold,
         mlp_threshold=runtime.mlp_threshold,
         provider_margin=runtime.provider_margin,
+        receipt_score=r_score,
+        receipt_threshold=gate["threshold"],
     )
+    if result.label == "unknown" and r_score is not None:
+        log.info("receipt-document gate abstained on %s (score %.2f)", path, r_score)
+    return result
 
 
 @dataclass

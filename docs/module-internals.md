@@ -982,12 +982,22 @@ derived results influence detection.
 
 [`classify.py`](../src/remove_ai_watermarks/classify.py) is the 2026-08-31
 photo freeze: CLIP-L-ft ridge AND freeze MLP, then 124-d focal heads only on
-DEFINITELY. The public label is `ai` / `human` / `unknown`. POSSIBLY is
-`unknown`. The named class is `openai` / `google` / `muse-image` / `tc260` /
-`None`. `tc260` is the China AIGC label standard, not one producer. The freeze
-file keys the Muse Image head `meta_muse_image`. Tests in
-`tests/test_classify.py` pin the gate without downloads and pin that
-`identify` does not import this module.
+DEFINITELY. Since 2026-09-02 a linear receipt-document gate runs first on
+that DEFINITELY path, on the same CLIP vector: a hit publishes `unknown`
+(detector stays `definitely`, provider is not read, 124-d extraction is
+skipped). The head ships as `assets/receipt-gate-2026-09-02.npz`; its
+threshold is pinned in `classify.py` and in the operating-point sidecar.
+Training data and certification live in
+`receipt-gate-shipped-2026-09-02/report.json` in the research tree; positives
+are CORD-v2 train (800, CC BY 4.0, disjoint from the CORD test split the
+eval corpus uses) plus regenerable synthetic receipts, negatives are ai_train
+rows. `tests/test_classify.py` pins the asset threshold, the downgrade, and
+that the gate skips forensics. The public label is `ai` / `human` /
+`unknown`. POSSIBLY is `unknown`. The named class is `openai` / `google` /
+`muse-image` / `tc260` / `None`. `tc260` is the China AIGC label standard,
+not one producer. The freeze file keys the Muse Image head
+`meta_muse_image`. Tests in `tests/test_classify.py` pin the gate without
+downloads and pin that `identify` does not import this module.
 
 Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
 `RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. User guide:
