@@ -48,6 +48,8 @@ durable store is `data/research/` in the main checkout.
    commands, hashes, and oracle verdicts instead of committing another corpus
    copy. A small curated before-and-after example may live in `docs/images/`
    when it is part of the public documentation.
+   Local benchmark manifests may point to these canonical inputs or to an
+   untracked corpus; every artifact and reference must carry its SHA-256 digest.
    `evaluations/engine-selection/` is the bounded exception for ORIGINAL study
    inputs: its manifest tracks a prompt-matched OpenAI/Meta content matrix, not
    generated model outputs or watermark-oracle evidence.

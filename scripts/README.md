@@ -25,6 +25,7 @@ explicitly names a tracked canonical result.
 | `video_fidelity_probe.py` | Compare delivered video fidelity with its source. |
 | `visible_eval.py` | Benchmark registered visible-mark detectors. |
 | `visible_removal_audit.py` | Audit visible-removal results over a local corpus. |
+| `watermark_benchmark.py` | Run hash-pinned image cases while keeping detection, removal observation, and fidelity separate. |
 
 ## Calibration and corpus preparation
 

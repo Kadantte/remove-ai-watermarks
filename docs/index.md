@@ -22,6 +22,7 @@ to run the tool. Use the maintainer references only when changing the code.
 | --- | --- |
 | [Module internals](module-internals.md) | Current architecture, invariants, and regression guards by module. |
 | [Development](development.md) | Environment setup, dependency recovery, CI behavior, and fixture policy. |
+| [Watermark benchmark kernel](benchmark-kernel.md) | Reproducible local detection, removal-observation, and fidelity measurements. |
 | [Code provenance](code-provenance.md) | Required notices for licensed derivative work. |
 | [Verification plan](verification-plan.md) | Verification methods, completed measurements, and remaining validation gaps. |
 | [Release and distribution](release-and-distribution.md) | PyPI, Homebrew, Hugging Face Space, photo-classify Hub model, ComfyUI Registry, and the release workflow. |
