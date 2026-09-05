@@ -35,6 +35,8 @@ OpenCV eraser remain covered across operating systems.
 
 Keep `uv.lock` compatible with `uv sync --frozen`. Dependency pull-request checks use GitHub's merge result against current `main`; if `main` moves, merge it locally and rerun the full gate because a newer linter can expose stale directives in later code.
 
+`test.yml` runs one concurrency group per ref with `cancel-in-progress: true`, so a newer push cancels the previous run mid-flight. A cancelled run is not a failure verdict: the superseding run's head includes the cancelled commits as ancestors, so watch that run to completion instead of retrying the push.
+
 Release and distribution behavior is canonical in [`release-and-distribution.md`](release-and-distribution.md).
 
 ## Fixture and data policy
