@@ -172,9 +172,10 @@ def check_visible(res: Results, tmp: Path) -> None:
         deliberately NOT removed, so `visible` correctly writes nothing and exits 2. That is
         the gate working, not a miss -- checked by asking `remove_auto_marks` whether it
         chose to act.
-      * Samsung is the faintest mark (peak alpha ~0.38) at a razor-thin 0.40 gate, so a
-        borderline positive can be reduced yet re-detect just above threshold. Reported as
-        the measured before->after confidence, not a bare pass/fail.
+      * Samsung is the faintest mark (peak alpha ~0.38). Its continuous top-hat detector
+        now separates retained positives from clean controls at the unchanged 0.40 gate,
+        but a fill can still leave a detectable residual. Report the measured before->after
+        confidence, not a bare pass/fail.
     """
     from remove_ai_watermarks.image_io import imread
     from remove_ai_watermarks.watermark_registry import detect_marks, get_mark, remove_auto_marks

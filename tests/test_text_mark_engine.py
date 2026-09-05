@@ -56,6 +56,12 @@ class TestPerMarkProvenanceRelaxation:
     Jimeng because its relaxed silhouette confuses other bottom-right text marks.
     """
 
+    def test_samsung_stays_strict_with_provenance(self):
+        """Its three real positives clear 0.40; relaxing to 0.28 admits clean texture."""
+        from remove_ai_watermarks import samsung_engine
+
+        assert samsung_engine._CONFIG.provenance_ncc_factor == 1.0
+
 
 class TestScaleBasis:
     """Mark geometry scales with a PER-MARK image dimension, measured not assumed.
@@ -132,13 +138,18 @@ class TestTophatFrontend:
 
         assert doubao_engine._CONFIG.detect_frontend == "tophat"
 
-    def test_other_marks_stay_binary_until_measured(self):
-        """A front-end switch must be measured per mark before it ships; jimeng and
-        samsung have no such measurement yet."""
-        from remove_ai_watermarks import jimeng_engine, samsung_engine
+    def test_samsung_uses_the_continuous_frontend_after_measurement(self):
+        """Samsung's own real-positive and clean-control study supports top-hat."""
+        from remove_ai_watermarks import samsung_engine
+
+        assert samsung_engine._CONFIG.detect_frontend == "tophat"
+        assert samsung_engine._CONFIG.ladder == (1.0,)
+
+    def test_jimeng_stays_binary_until_measured(self):
+        """A front-end switch must be measured per mark before it ships."""
+        from remove_ai_watermarks import jimeng_engine
 
         assert jimeng_engine._CONFIG.detect_frontend == "binary"
-        assert samsung_engine._CONFIG.detect_frontend == "binary"
 
     def test_response_is_contrast_invariant(self):
         """The whole point: a faint mark and a bold one produce the same response, so a

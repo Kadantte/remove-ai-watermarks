@@ -46,8 +46,10 @@ MAX_SATURATION = 55
 LOGO_MIN_LUMA = 110
 TOPHAT_DELTA = 8
 
-# Shape-consistent detection. Threshold 0.40; real marks ~0.79, and Doubao/Jimeng score
-# 0.0 here (and Samsung 0.0 on theirs) -- no cross-fire (the corner also differs).
+# Shape-consistent detection. The continuous top-hat scored the three retained real
+# positives at 0.82-0.90 and 421 public clean controls no higher than 0.38, so the
+# binary-era 0.40 threshold stays unchanged. The exact one-rung ladder matches both
+# measured widths and avoids handing clean corners two unneeded scale trials.
 DETECT_MIN_COVERAGE = 0.01
 DETECT_NCC_THRESHOLD = 0.40
 
@@ -81,6 +83,9 @@ _CONFIG = TextMarkConfig(
     morph_open_size=3,
     detect_min_coverage=DETECT_MIN_COVERAGE,
     detect_ncc_threshold=DETECT_NCC_THRESHOLD,
+    detect_frontend="tophat",
+    ladder=(1.0,),
+    provenance_ncc_factor=1.0,
     alpha_width_frac=_ALPHA_WIDTH_FRAC,
     alpha_height_frac=_ALPHA_HEIGHT_FRAC,
     min_gw=16,
@@ -120,7 +125,7 @@ class SamsungEngine(TextMarkEngine):
 
         Samsung's peak opacity is only about 0.38, so filling the enclosing wordmark
         rectangle destroys substantially more real content than the overlay damaged.
-        The binary detector already found the captured silhouette at one exact box;
+        The continuous detector already found the captured silhouette at one exact box;
         align the solved alpha to that box and mask its strokes only. Explicit
         ``force`` has no trustworthy alignment and retains the shared geometry box.
         """

@@ -1349,13 +1349,25 @@ seven, and regressed on one. The union is deliberate: replacing the old footprin
 with the synthetic core alone would overfit the font render and could discard a
 real variant stroke the pixel mask already found.
 
-Samsung's binary front end now carries the location of its nominal-size template
-match as well as the score. `SamsungEngine.footprint_mask` aligns the captured alpha
-to that same box and masks only pixels above the measured 0.05 alpha floor, followed
-by one pixel of dilation. The asset already contains the solved opacity, whose peak
-is about 0.38; research renderers must composite it toward pure white exactly once.
-Multiplying it by 0.38 again produced an unrealistically faint synthetic mark and
-invalidated the first Samsung response curve.
+Samsung uses the continuous top-hat front end with an exact `(1.0,)` scale ladder.
+The three retained real positives (two controlled captures and one real-content
+photo) scored 0.82-0.90, while 421 public clean controls reached at most 0.38, so
+the existing 0.40 threshold did not need to move. The exact rung matches the measured
+width at both 1086 and 2958 pixels and avoids giving clean corners extra scale trials.
+Samsung is strict-only under provenance: the inherited 0.70 factor would lower the
+gate to 0.28 and admitted 14/421 clean controls without recovering any retained real
+positive.
+On the same 421 backgrounds, nominal constructed detection rose from 81/421 through
+the binary front end to 321/421 through continuous top-hat, with no control fires in
+either arm. This constructed arm measures the known failure mode on textured content;
+it is not a production-recall estimate.
+
+The winning template location travels with the score. `SamsungEngine.footprint_mask`
+aligns the captured alpha to that same box and masks only pixels above the measured
+0.05 alpha floor, followed by one pixel of dilation. The asset already contains the
+solved opacity, whose peak is about 0.38; research renderers must composite it toward
+pure white exactly once. Multiplying it by 0.38 again produced an unrealistically
+faint synthetic mark and invalidated the first Samsung response curve.
 
 The mask geometry was checked on both retained flat provider captures and by a
 paired 60-image constructed-reference ablation on 2026-09-04. At the native
@@ -1365,6 +1377,11 @@ on 55/60 images for OpenCV, 55/60 for MI-GAN, and 57/60 for LaMa; median paired
 gains were 14.98, 10.38, and 14.87 dB respectively (two-sided sign-test
 `p=1.04e-11`, `1.04e-11`, and `6.25e-14`). Explicit `force` has no detected box to
 align and deliberately retains the conservative geometry fallback.
+
+For the 321 newly detected constructed marks, the winning box matched the stamped
+box exactly and every detection produced a non-empty mask. One OpenCV fill remained
+detectable and is surfaced by post-removal validation; the detector does not trigger
+an automatic retry.
 
 Yuanbao uses the polarity-independent `contrast` front end because its standard
 two-line mark can be light on dark scenes or dark on light scenes. Its detector

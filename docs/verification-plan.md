@@ -200,6 +200,27 @@ does not justify lowering the threshold because the grid is adversarial and is n
 production-recall sample. The corrected report is
 `.local-eval/detector-response-corrected-n150.jsonl`.
 
+The 2026-09-05 Samsung follow-up changed the front end, not the threshold. Continuous
+top-hat with an exact `(1.0,)` ladder scored the three retained real positives at
+0.82-0.90 and produced 0/421 fires on the full public clean pool (maximum 0.38; 95%
+Wilson upper bound 0.9%). The provenance factor is 1.0: the inherited 0.70 relaxation
+would admit 14/421 controls at its 0.28 gate and recovered no retained real positive.
+On correctly stamped nominal marks over those same controls,
+detection improved from 81/421 (19.2%) for binary to 321/421 (76.2%) for top-hat. All
+321 boxes exactly matched the known stamp geometry and were maskable. After one OpenCV
+fill, 320/321 no longer detected; the remaining result is reported by post-removal
+validation rather than retried. The constructed rate is a controlled failure-mode
+measurement, not production recall.
+
+The complete B2 harness was then rerun on the same deterministic 150-source selection
+into `.local-eval/detector-response-samsung-tophat-n150.jsonl`: 28,800 stamped cells
+plus 1,800 controls, with all 204 expected rows present for every source. Samsung's
+nominal cell improved from 30/150 (20.0%) to 120/150 (80.0%); all 120 were maskable,
+and controls remained 0/150 (maximum score 0.3543). Across the full adversarial grid,
+399/2,400 Samsung cells detected and all 399 were maskable. The key sets matched the
+previous report, and all 28,050 non-Samsung rows were identical field for field, so the
+measured change is isolated to Samsung.
+
 ### B3. Invisible round-trip, positive-control gated
 
 The open DWT-DCT detector is positive-only and carrier-fragile: "not found" on a fragile

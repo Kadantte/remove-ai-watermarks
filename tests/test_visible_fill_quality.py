@@ -61,6 +61,23 @@ def test_samsung_stamp_uses_the_solved_alpha_exactly_once() -> None:
     assert np.array_equal(marked[y : y + h, x : x + w, 0], expected)
 
 
+def test_samsung_detects_its_faint_mark_on_a_textured_background() -> None:
+    """Continuous top-hat preserves a mark that binary thresholding shatters."""
+    height, width = 800, 600
+    rng = np.random.default_rng(0)
+    xx = np.arange(width, dtype=np.float32)[None, :]
+    texture = 120 + 25 * np.sin(xx / 9)
+    texture = texture + cv2.GaussianBlur(rng.normal(0, 35, (height, width)).astype(np.float32), (0, 0), 2)
+    clean = cv2.cvtColor(np.clip(texture, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+    stamped = stamp_image_mark("samsung", clean)
+    assert stamped is not None
+
+    marked, _box = stamped
+    detection = wr.get_mark("samsung").detect(marked)
+    assert detection.detected
+    assert detection.confidence >= 0.80
+
+
 def test_detector_response_can_construct_every_declared_grid_cell() -> None:
     """An out-of-search-range mark is a measured miss, not an omitted row."""
     for key in _IMAGE_KEYS:

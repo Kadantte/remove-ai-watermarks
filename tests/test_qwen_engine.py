@@ -68,15 +68,15 @@ class TestLocate:
 
 class TestConfig:
     def test_per_mark_ladder_and_shared_default_untouched(self):
-        # Qwen's two size modes need their own 2-rung ladder; every other mark must
-        # keep the shipped 3-rung default (the field's whole point is per-mark).
+        # Qwen's two size modes need their own 2-rung ladder. Doubao and Jimeng keep
+        # the shared default; Samsung's separately measured exact rung is pinned in
+        # TestTophatFrontend.
         assert _LADDER == (0.78, 1.27)
         assert QwenEngine().config.ladder == (0.78, 1.27)
         from remove_ai_watermarks.doubao_engine import _CONFIG as db
         from remove_ai_watermarks.jimeng_engine import _CONFIG as jm
-        from remove_ai_watermarks.samsung_engine import _CONFIG as ss
 
-        assert db.ladder == jm.ladder == ss.ladder == (0.8, 1.0, 1.25)
+        assert db.ladder == jm.ladder == (0.8, 1.0, 1.25)
 
     def test_strict_only_no_provenance_relaxation(self):
         # The sub-gate band is dominated by non-Qwen banners on same-cohort frames,
