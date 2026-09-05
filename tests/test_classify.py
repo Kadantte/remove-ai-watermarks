@@ -49,7 +49,7 @@ def _scores(
 
 def test_hub_snapshot_is_the_freeze_revision() -> None:
     assert WEIGHTS_REPO == "wiltodelta/raiw-photo-classify"
-    assert WEIGHTS_REVISION == "c0ac82b6f1ae9fc0b92c467562282e9422da6da6"
+    assert WEIGHTS_REVISION == "ffc46db5135ee3a83f51538f2c8f7483b9b8b40c"
 
 
 def test_shipped_operating_point_matches_the_runtime_defaults() -> None:
