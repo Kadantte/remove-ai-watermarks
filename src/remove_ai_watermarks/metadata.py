@@ -820,6 +820,7 @@ def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None)
     from remove_ai_watermarks._internal.c2pa import (
         c2pa_info_has_invalid_credential,
         extract_c2pa_info,
+        soft_binding_registry_entries_in,
         synthid_evidence_vendors_in,
     )
 
@@ -832,6 +833,11 @@ def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None)
     vendors = c2pa.get("synthid_vendors")
     if vendors:
         return ", ".join(vendors)
+    soft_binding_algorithm = c2pa.get("soft_binding_algorithm")
+    if soft_binding_algorithm:
+        entries = soft_binding_registry_entries_in(str(soft_binding_algorithm).encode())
+        if any(entry.kind == "watermark" for entry in entries) or not entries:
+            return None
 
     # Non-PNG containers (JPEG APP11, WebP, AVIF/HEIF/JXL uuid box) keep the
     # C2PA manifest where the PNG parser can't reach it. Binary-scan for the
@@ -842,8 +848,6 @@ def synthid_source(image_path: Path, *, c2pa_info: dict[str, Any] | None = None)
     ai_source = b"trainedAlgorithmicMedia" in data or b"TrainedAlgorithmicMedia" in data
     if not (has_c2pa and ai_source):
         return None
-    from remove_ai_watermarks._internal.c2pa import soft_binding_registry_entries_in
-
     # A declared watermark blocks a second, generic watermark attribution. A
     # content fingerprint does not suppress independent SynthID evidence.
     if any(entry.kind == "watermark" for entry in soft_binding_registry_entries_in(data)):

@@ -19,3 +19,8 @@ This page records notices required by source dependencies and licensed derivativ
   TrustMark Variant P example, licensed under MIT. Its source commit, digest,
   and reproduced license are recorded beside the fixture in
   `data/fixtures/README.md` and `data/licenses/adobe-trustmark-MIT.txt`.
+- `data/fixtures/provenance/microsoft-paint-invismark.png` is an original
+  Microsoft Paint output supplied by Xusheng Li and licensed by him under MIT.
+  Its source research, digest, expected signal, and reproduced license are
+  recorded in `data/fixtures/README.md` and
+  `data/licenses/xusheng-li-paint-invismark-MIT.txt`.

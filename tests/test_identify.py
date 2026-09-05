@@ -7,6 +7,7 @@ against the real committed C2PA / IPTC fixtures in data/fixtures/provenance/.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import subprocess
 import sys
@@ -463,6 +464,7 @@ class TestIdentifyNonPng:
         ("claim_generator", "platform"),
         [
             ("Higgsfield AI", "Higgsfield AI"),
+            ("recraft.ai", "Recraft"),
             ("Topaz Labs Image API", "Topaz Labs"),
             ("TIKTOK AD Creative Toolbox", "TikTok Ad Creative Toolbox"),
         ],
@@ -490,6 +492,78 @@ class TestIdentifyNonPng:
         assert report.is_ai_generated is True
         assert report.platform == platform
         assert claim_generator in next(s.detail for s in report.signals if s.name == "c2pa")
+
+    def test_real_recraft_c2pa_fixture(self):
+        report = identify(SAMPLES_DIR / "recraft-v3.webp", check_visible=False)
+
+        assert report.is_ai_generated is True
+        assert report.confidence == "high"
+        assert report.platform == "Recraft"
+        assert any(signal.name == "c2pa" and "recraft.ai" in signal.detail for signal in report.signals)
+
+    def test_real_krea_api_fixture_has_no_local_provenance(self):
+        report = identify(SAMPLES_DIR / "krea-2-medium-turbo.png", check_visible=False)
+
+        assert report.is_ai_generated is None
+        assert report.platform is None
+        assert report.signals == []
+
+    def test_real_direct_kling_fixture_has_tc260_and_current_visible_mark(self):
+        path = SAMPLES_DIR.parent / "visible" / "kling" / "provider-original-direct.png"
+        report = identify(path, check_visible=True)
+
+        assert report.is_ai_generated is True
+        assert any(
+            signal.name == "aigc" and "001191110108335469089C10100" in signal.detail for signal in report.signals
+        )
+        assert any(signal.name == "visible_kling" for signal in report.signals)
+
+    @pytest.mark.parametrize("filename", ["qwen-image.png", "seedream-v4.jpg"])
+    def test_real_wavespeed_api_fixture_has_no_local_provenance(self, filename):
+        report = identify(SAMPLES_DIR / filename, check_visible=False)
+
+        assert report.is_ai_generated is None
+        assert report.platform is None
+        assert report.signals == []
+
+    def test_real_wavespeed_hunyuan_fixture_has_fal_c2pa(self):
+        path = SAMPLES_DIR / "hunyuan-image-3.png"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+            "6ae2ac073ac79b02b0934c905364f200420c2ff60fea232bd9e0a5fca785cc09"
+        )
+
+        report = identify(path, check_visible=False, check_invisible=False)
+
+        assert report.is_ai_generated is True
+        assert report.platform == "fal.ai"
+        assert report.confidence == "high"
+        assert any(signal.name == "c2pa" and "fal-ai/hunyuan-image" in signal.detail for signal in report.signals)
+
+    def test_real_wavespeed_kling_fixture_has_tc260_metadata(self):
+        path = SAMPLES_DIR / "kling-image-v3.png"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+            "501ab865b47ba59b64bc0f68118300744b0d5c7be2fa4e2ecbb3a78de5d8a82b"
+        )
+
+        report = identify(path, check_visible=False, check_invisible=False)
+
+        assert report.is_ai_generated is True
+        assert report.confidence == "high"
+        aigc = next(signal for signal in report.signals if signal.name == "aigc")
+        assert "001191110108335469089C10100" in aigc.detail
+
+    def test_real_qwen_create_fixture_has_tc260_metadata(self):
+        path = SAMPLES_DIR / "qwen-create-qwen-image-2.png"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+            "60c39ed8aedb081193c62289be549785e74d31fc8d071961003fabd74712429d"
+        )
+
+        report = identify(path, check_visible=False, check_invisible=False)
+
+        assert report.is_ai_generated is True
+        assert report.confidence == "high"
+        aigc = next(signal for signal in report.signals if signal.name == "aigc")
+        assert "001191440101MA9Y9T4H7A00000" in aigc.detail
 
     def test_dreamina_attributed_without_source_type(self, tmp_path: Path):
         # Dreamina (ByteDance's international Jimeng brand) signs C2PA as
@@ -1332,6 +1406,43 @@ class TestIdentifySoftBinding:
         assert "com.microsoft.invismark.1" in invismark.detail
         assert watermark_id in invismark.detail
         assert any("may remain in the pixels" in caveat for caveat in report.caveats)
+
+    @pytest.mark.parametrize(
+        ("filename", "watermark_id", "sha256"),
+        [
+            (
+                "microsoft-invismark.png",
+                "19b070a1-23f0-40eb-826c-cade306337eb",
+                "be27ac7c351e7f381dc69e140ca3611ecd9db81e40926c68050ceffdd0ce6c04",
+            ),
+            (
+                "microsoft-paint-invismark.png",
+                "a4ed421e-7c37-4409-998e-f8788c564572",
+                "74eda22d210d534fcb5b75bedf8acd3bd110b48a95f4b9e546cd34f546effc05",
+            ),
+            (
+                "microsoft-bing-image-creator.jpg",
+                "aec9a34e-665f-4549-9c02-9d29337a5de6",
+                "55cad5355b6eeeb25f84ea074f85c0ea55b82d63c27f43e3429bb75f28734ac7",
+            ),
+            (
+                "../visible/microsoft/provider-original.png",
+                "975290d4-9c2f-4359-ad5a-92c5b5b850a4",
+                "0e76fb8aa0540b18fee4d63ac4b5fd63c7eee310474e896d21d27e668403afe7",
+            ),
+        ],
+    )
+    def test_real_microsoft_invismark_fixture(self, filename, watermark_id, sha256):
+        path = SAMPLES_DIR / filename
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == sha256
+
+        report = identify(path, check_visible=False)
+
+        assert report.platform == "Microsoft (Copilot / Designer)"
+        soft_binding = next(signal for signal in report.signals if signal.name == "soft_binding")
+        assert "com.microsoft.invismark.1" in soft_binding.detail
+        assert watermark_id in soft_binding.detail
+        assert any(signal.name == "invismark" for signal in report.signals)
 
 
 class TestIdentifyIptcAi:

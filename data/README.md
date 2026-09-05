@@ -7,8 +7,9 @@ data/
   fixtures/
     provenance/   Real format and provenance fixtures used by tests
                   (source records live in fixtures/README.md)
-    visible/      Synthetic per-mark example gallery (one committed example per
-                  registered visible mark; see fixtures/visible/README.md)
+    visible/      Per-mark example gallery: one synthetic canonical example per
+                  registered mark plus documented provider originals where available
+                  (see fixtures/visible/README.md)
   calibration/
     <vendor>/     Minimal controlled inputs needed to rebuild detector assets
   synthid/
@@ -23,6 +24,11 @@ data/
     video-synthid-oracle.csv
                   Reproducible full-clip Gemini SynthID verdicts
 ```
+
+[`image-watermark-examples.csv`](image-watermark-examples.csv) and
+[`video-watermark-examples.csv`](video-watermark-examples.csv) are the coverage
+indexes for real carriers. They point to each canonical binary instead of
+duplicating it and record unsupported gaps and source-specific licensing.
 
 ## Storage rules
 

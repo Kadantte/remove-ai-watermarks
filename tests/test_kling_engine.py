@@ -1,4 +1,4 @@
-"""Tests for the Kling (可灵AI 3.0) visible-watermark engine (localize -> fill).
+"""Tests for the Kling CJK/Latin 3.0 visible-watermark engine (localize -> fill).
 
 Every tuned constant in ``kling_engine`` was measured on the 30-frame vendor
 cohort (2026-07-21, ``scripts/vendor_mark_calibrate.py``); these tests pin the
@@ -18,6 +18,7 @@ from remove_ai_watermarks import watermark_registry as registry
 from remove_ai_watermarks.kling_engine import (
     _ALPHA_HEIGHT_FRAC,
     _ALPHA_WIDTH_FRAC,
+    _LATIN_CONFIG,
     KlingEngine,
     _alpha_template,
     _glyph_silhouette,
@@ -78,6 +79,11 @@ class TestConfig:
         # gate must sit above that with margin.
         assert KlingEngine().config.detect_ncc_threshold > 0.32
 
+    def test_latin_variant_keeps_its_measured_narrow_ladder(self):
+        assert _LATIN_CONFIG.asset_name == "kling_latin_alpha.png"
+        assert _LATIN_CONFIG.ladder == (0.9, 1.0, 1.1)
+        assert _LATIN_CONFIG.detect_ncc_threshold == 0.40
+
     def test_registry_row(self):
         mark = registry.get_mark("kling")
         assert mark.location == "bottom-right"
@@ -125,6 +131,12 @@ class TestDetect:
         eng = KlingEngine()
         assert eng.detect(wm).detected
         assert not eng.detect(cv2.resize(wm, (150, 112))).detected
+
+    def test_metadata_only_kling_api_export_is_not_a_visible_mark(self):
+        path = Path(__file__).resolve().parents[1] / "data" / "fixtures" / "provenance" / "kling-image-v3.png"
+        image = cv2.imread(str(path))
+        assert image is not None
+        assert not KlingEngine().detect(image).detected
 
 
 class TestFootprintMaskAndRemoval:

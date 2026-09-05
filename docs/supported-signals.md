@@ -14,12 +14,12 @@ The `visible` command registers these mark keys:
 | `doubao` | `豆包AI生成` | Bottom right | Vendor specific text detector. |
 | `jimeng` | `★ 即梦AI` | Bottom right | Vendor specific text detector. |
 | `qwen` | `千问AI生成` | Bottom right | Strict visual gate. |
-| `kling` | `可灵AI 3.0` | Bottom right | Only calibrated variants are covered. |
+| `kling` | `可灵AI 3.0` or `KlingAI 3.0` | Bottom right | Separate calibrated silhouettes cover the older CJK and current IMAGE 3.0 Latin variants. |
 | `yuanbao` | `元宝` over `AI生成` | Bottom right | Standard two-line variant only. |
 | `samsung` | `✦ Contenuti generati dall'AI` | Bottom left | Calibrated for the Italian text variant. |
 | `runninghub` | `RunningHub AI生成` | Top left | Strict visual and position gates. |
 | `baidu` | `百度 AI生成` | Bottom right | Detector and extended removal footprint. |
-| `liblib` | `LiblibAI` | Bottom center | Includes a minimum image size gate. |
+| `liblib` | `LiblibAI` | Bottom center | Includes a minimum image size gate. A 2026-09-05 Smart Image V2 provider original instead carries a smaller top-left `AI生成` pill and is not detected by this historical-wordmark engine. |
 | `microsoft` | One Microsoft white AI-badge variant | Top right | Strict uses the visual gate; auto can use Microsoft provenance for the measured [relaxed gate](module-internals.md#visible-mark-removal). Other documented icon, text, and position variants are not covered. |
 | `jimeng_pill` | `AI生成` pill | Top left | Weak detector with additional product and background gates. |
 
@@ -30,9 +30,16 @@ the masked area.
 Marks from other vendors are not detected automatically. Use `erase --region`
 when you can select the affected area yourself.
 
-Synthetic examples for every registered image and video mark live in the
-[visible-mark gallery](../data/fixtures/visible/README.md). They demonstrate the
-detectors' canonical geometry and house style, not vendor raster fidelity.
+Synthetic canonical examples for every registered image and video mark live in
+the [visible-mark gallery](../data/fixtures/visible/README.md), alongside
+documented real provider originals where redistribution is cleared. The
+canonical examples demonstrate detector geometry and house style; provider
+originals exercise vendor raster fidelity.
+
+Provider formats can change independently of the registered key. In particular,
+the current LiblibAI sample in the gallery preserves a real new-format output
+and its LiblibAI TC260 producer metadata, but is deliberately not listed as a
+positive detector fixture.
 
 ### Visible video marks
 
@@ -44,12 +51,12 @@ detectors' canonical geometry and house style, not vendor raster fidelity.
 | `seedance` | Boxed `AI` label | Fixed bottom-right corner | Requires an anchored recurring match; the full localized box is filled because a thinner synthetic shape mask leaves the real translucent rim behind. |
 | `dola` | `Dola AI` text | Fixed bottom-right corner | Requires an anchored recurring match; ByteDance or BytePlus provenance can relax only an existing visual run. |
 | `hailuo` | `MINIMAX \| hailuo AI` composite label | Fixed lower edge | Uses a synthetic waveform, text, separator, and ring silhouette; the complete recurring label box is filled. A TC260 label naming MiniMax as producer can relax only an existing stable run. |
-| `kling` | Kling AI swirl, `KLING AI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font variants, an edge gate, a white-label gate, and anchored temporal recurrence. |
+| `kling` | Kling AI swirl, `KLING AI` or `KlingAI`, version, and optional `PRO` suffix | Fixed bottom-right edge | Combines a synthetic logo rescue with font and capitalization variants, an edge gate, a white-label gate, and anchored temporal recurrence. |
 
 `video identify`, `video visible`, and `video all` share this registry and the
 same temporal arbiter. It is separate from the image registry because selection
 is made over a sequence rather than one raster. The default `auto` mode scans
-all six entries in one decode pass and selects the first temporally stable
+all seven entries in one decode pass and selects the first temporally stable
 match in table order; an explicit mark restricts the scan to that row.
 Accepted fills are motion-aligned across adjacent frames by default. The prior
 fill contributes only where its warped mask covers the current removal mask and
@@ -181,10 +188,10 @@ inspection cannot independently verify the output. Microsoft's official
 is the external oracle: it reports pixel `Watermark` and embedded `C2PA` results
 separately; a control-positive, output-negative pair is the available per-file
 verification path. The API needs Azure credentials; the page a human can check
-without an account is <https://ai.azure.com/nextgen/validate>. Its verdict is
-weaker than the API's: it collapses watermark and C2PA into one rendered result
-and tops out at `Inconclusive` rather than a watermark-negative, so treat
-`Inconclusive` on a processed file as "not confirmed", not as "detected still".
+without an account is <https://ai.azure.com/nextgen/validate>. That page is the
+public provider oracle used for the measured removal certification. Its clean
+outcome is rendered as `Inconclusive`; the authenticated API exposes separate
+watermark and C2PA fields but is not a different class of certification.
 
 Meta Muse Image stamps every output with Content Seal, a proprietary invisible
 pixel watermark, and ships no visible mark (the legacy `Imagined with AI`

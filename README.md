@@ -203,9 +203,9 @@ to one provider.
 Sora covers the moving Sora 2 mascot and wordmark. Veo covers both the current
 four-point diamond and the legacy `Veo` text. Seedance covers the fixed boxed
 `AI` label, Dola covers the fixed `Dola AI` text, Hailuo AI covers the composite
-`MINIMAX | hailuo AI` label, and Kling AI covers the bottom-right `KLING AI`
-label with its version suffix. A completed encode is published atomically. No
-output is written when no stable mark is found.
+`MINIMAX | hailuo AI` label, and Kling AI covers the bottom-right `KLING AI` or
+`KlingAI` label with its version suffix. A completed encode is published
+atomically. No output is written when no stable mark is found.
 HDR, PQ/HLG, and greater-than-8-bit inputs are rejected before encoding rather
 than silently reduced through OpenCV's 8-bit BGR boundary.
 

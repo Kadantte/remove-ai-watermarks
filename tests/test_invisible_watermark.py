@@ -6,14 +6,11 @@ both identify them and match the upstream decoder bit for bit.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 from remove_ai_watermarks.invisible_watermark import (
     _BITS_48,
@@ -101,6 +98,10 @@ class TestRaveledHaarPass:
 
 
 class TestDetect:
+    def test_committed_sdxl_carrier(self):
+        path = Path(__file__).parents[1] / "data/fixtures/provenance/sdxl-dwt-dct.png"
+        assert detect_invisible_watermark(path) == "Stable Diffusion XL"
+
     def test_in_tree_decoder_matches_upstream(self, tmp_path: Path):
         from imwatermark import WatermarkDecoder
 

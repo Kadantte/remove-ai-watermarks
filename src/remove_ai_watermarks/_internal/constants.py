@@ -123,6 +123,7 @@ C2PA_CLAIM_GENERATOR_PLATFORMS: tuple[tuple[str, str], ...] = (
     ("firefly", "Adobe Firefly"),
     ("dreamina", "ByteDance Dreamina"),
     ("higgsfield ai", "Higgsfield AI"),
+    ("recraft.ai", "Recraft"),
     ("topaz labs image api", "Topaz Labs"),
     ("tiktok ad creative toolbox", "TikTok Ad Creative Toolbox"),
 )

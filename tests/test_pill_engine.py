@@ -1,5 +1,8 @@
-"""Jimeng-basic 'AI生成' pill: capture-less mark (detect via synthetic silhouette
-edge-NCC, remove via inpaint). No model download -- cv2 fallback / pure logic only."""
+"""Jimeng-basic 'AI生成' pill: synthetic-silhouette edge-NCC and inpainting.
+
+No model download -- cv2 fallback / pure logic only. The separate visible-example
+suite exercises the detector against a published real-world carrier.
+"""
 
 from __future__ import annotations
 

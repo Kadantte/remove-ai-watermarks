@@ -560,6 +560,11 @@ class TestSynthIDSource:
         assert synthid_source(SAMPLES_DIR / "firefly-1.png") is None
         assert "synthid_watermark" not in get_ai_metadata(SAMPLES_DIR / "firefly-1.png")
 
+    def test_microsoft_invismark_is_not_openai_synthid(self):
+        path = SAMPLES_DIR / "microsoft-paint-invismark.png"
+        assert synthid_source(path) is None
+        assert "synthid_watermark" not in get_ai_metadata(path)
+
     def test_non_ai_image_is_not_synthid_source(self, clean_photo: Path):
         assert synthid_source(clean_photo) is None
 

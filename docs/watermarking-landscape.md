@@ -25,8 +25,16 @@ icon-only variants need separate calibrated silhouettes.
 Some applications sign C2PA through an upstream model or infrastructure
 provider. For AI claims, exact product mappings in `claim_generator` therefore
 take precedence over issuer attribution. Supported mappings include Higgsfield
-AI, Topaz Labs Image API, and TikTok Ad Creative Toolbox; an unknown claim
-generator still falls back to the certificate issuer.
+AI, Recraft, Topaz Labs Image API, and TikTok Ad Creative Toolbox; an unknown
+claim generator still falls back to the certificate issuer.
+
+**OpenRouter raster metadata survey (2026-09-02):** a paid Recraft V3 API
+output carried a valid C2PA claim with `claim_generator` `recraft.ai`, a
+`c2pa.created` action, and `trainedAlgorithmicMedia`; that exact generator now
+attributes the platform to Recraft. Paid Krea 2 Medium Turbo and Sourceful
+Riverflow V2 Fast API outputs carried no locally readable C2PA, XMP, EXIF, or
+container metadata. Their absence is evidence about those exact files and API
+routes, not a claim that every Krea or Riverflow export is metadata-free.
 
 **ByteDance Volcano Engine (Volcengine)** — the cloud behind Doubao / Jimeng — signs its AI image output with a cert from `certificate_center@volcengine.com` + `trainedAlgorithmicMedia` (issuer `b"volcengine"` → "ByteDance (Volcano Engine)", platform "ByteDance Volcano Engine"); note this is the C2PA-signed surface, distinct from the XMP/PNG TC260 `AIGC` label Doubao also uses. ByteDance's **international brand (BytePlus / Seedream / Seededit)** signs the same content as **"Byteplus Pte. Ltd."**. The bare `volcengine` needle missed it, so BytePlus output was mis-attributed to "Adobe Firefly" through an incidental "Adobe XMP" toolkit string. Issuer `b"Byteplus"` maps directly to "BytePlus (ByteDance)". ByteDance's consumer app **Dreamina** (the international Jimeng brand) signs as **"Bytedance Pte. Ltd."** with a `Dreamina/x.y` claim generator but, unlike the Volcano Engine surface, ships **no `trainedAlgorithmicMedia`**. Issuer `b"Dreamina"` maps to "ByteDance Dreamina" with **`asserts_ai=True`**. Registering the broader **issuer** `b"Bytedance Pte"` was deliberately avoided because that same entity also signs non-AI CapCut edits; keying on the `Dreamina` generator token is precise.
 - **EXIF/XMP/PNG-text generator tag (caught by `exif_generator`):** **Ideogram** writes EXIF `Make="Ideogram AI"` (collected 2026-05-24 — no C2PA, no SynthID, no imwatermark; the Make tag is the only signal). Additional verified generator stamps include **NovelAI** (`Software`, `Source`, and `Title` PNG text chunks), **Reve** (`Software` or XMP `CreatorTool` = `reve.com`), and **Aphrodite AI** (`Make` or `Software` = `Aphrodite AI`).
@@ -66,7 +74,7 @@ payloads. Removal remuxes either container through ffmpeg with stream copy.
   encoder and the carrier remains decodable.
 - **Invisible but NOT locally detectable (proprietary, API/oracle only — same wall as SynthID):** Amazon Titan Image Generator + Nova Canvas (Bedrock `DetectGeneratedContent` API), Kakao (new SynthID image adopter, May 2026), NVIDIA Cosmos (SynthID video). No local detector possible; treat like SynthID.
 - **C2PA 2.4 "Durable Content Credentials" (April 2026; verified against the spec) raise the bar for metadata stripping.** 2.4 defines soft bindings (an invisible watermark or a content fingerprint) plus a server-side manifest repository and a new `c2pa.repository-receipt` assertion. Per the spec: "if a C2PA manifest is removed from an asset, but a copy of that manifest remains in a provenance store elsewhere, the manifest and asset may be matched using available soft bindings." So our local `metadata --remove` deletes the *embedded* manifest, but a fingerprint/watermark soft binding can still re-link the image to its manifest in a repository server-side. Stripping the file is becoming necessary-but-not-sufficient against durable provenance. (Our parsers target the stable embedded-manifest format documented in C2PA 2.1 §11; that format is unchanged in 2.4 -- the new pieces are repository/soft-binding infra, not the on-file box layout, so no parser change is implied.) Spec: https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html We READ the soft-binding `alg`, preserve the structured assertion's signed `value`, and generate the display/type registry from the official C2PA JSON with `scripts/sync_c2pa_soft_bindings.py`. The packaged snapshot keeps runtime inspection offline and pins the exact upstream revision. Registration is name-only support: Adobe TrustMark remains the one locally decoded scheme (`trustmark_detector`) unless another compatible decoder is independently verified. Fingerprint entries remain re-linkability signals and are not mislabeled as pixel watermarks.
-- **Microsoft Paint and Photos InvisMark (reverse-engineered 2026-08-20):** Paint receives a per-generation GUID from remote prompt moderation, embeds it into locally generated pixels, and records the same value in `c2pa.soft-binding` under `com.microsoft.invismark.1`. The C2PA soft-binding registry independently identifies that algorithm as Microsoft Responsible AI InvisMark for image and video. Paint's 144-bit writer framing does not match the public repository's 100-bit pretrained checkpoint interface, so compatibility is not assumed. The parser reports the signed identifier; there is no validated local pixel decoder. Microsoft's external Content Provenance Detection API is the removal oracle because it reports `Watermark` separately from `C2PA`; a metadata-stripped, pixel-identical control must remain watermark-positive before an output-negative result is attributed to pixel removal. The no-account web page for the same check is <https://ai.azure.com/nextgen/validate> (its `Inconclusive` verdict is weaker than the API's separate watermark result). Sources: https://xusheng.dev/posts/reversing/mspaint_invisible_watermark/main/, https://github.com/c2pa-org/softbinding-algorithm-list/blob/main/softbinding-algorithm-list.json, and https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection
+- **Microsoft Paint and Photos InvisMark (reverse-engineered 2026-08-20):** Paint receives a per-generation GUID from remote prompt moderation, embeds it into locally generated pixels, and records the same value in `c2pa.soft-binding` under `com.microsoft.invismark.1`. The C2PA soft-binding registry independently identifies that algorithm as Microsoft Responsible AI InvisMark for image and video. Paint's 144-bit writer framing does not match the public repository's 100-bit pretrained checkpoint interface, so compatibility is not assumed. The parser reports the signed identifier; there is no validated local pixel decoder. Microsoft's external Content Provenance Detection API is the removal oracle because it reports `Watermark` separately from `C2PA`; a metadata-stripped, pixel-identical control must remain watermark-positive before an output-negative result is attributed to pixel removal. The no-account web page for the same check is <https://ai.azure.com/nextgen/validate>; its clean outcome is rendered as `Inconclusive`, and that public provider oracle is the surface used for the measured removal certification. Sources: https://xusheng.dev/posts/reversing/mspaint_invisible_watermark/main/, https://github.com/c2pa-org/softbinding-algorithm-list/blob/main/softbinding-algorithm-list.json, and https://learn.microsoft.com/en-us/azure/ai-services/content-safety/how-to/how-to-provenance-detection
 - **Built in the dated batch:** soft-binding vendor detection, IPTC Photo
   Metadata AI-disclosure fields, C2PA detection and stripping for supported
   ISOBMFF video, the optional Adobe TrustMark decoder, and temporally stabilized
@@ -130,6 +138,58 @@ and temporal recurrence alone. The generic
 instead uses Florence-2 to identify arbitrary watermarks before LaMa
 inpainting. That is broader, but it carries a much heavier model and a less
 auditable detection boundary than the provider-specific synthetic path here.
+
+**Aggregator video export survey (2026-09-03).** Four paid, neutral-prompt
+text-to-video jobs tested whether API access could reproduce the registered
+consumer-facing marks. None did. OpenRouter `bytedance/seedance-2.0-mini`
+(4 s, 480p, `watermark=true`, USD 0.0568316) returned a valid BytePlus C2PA
+manifest but no visible boxed-`AI` mark; SHA-256
+`19c1e323fbb085e5679374a8b646d65a5e902292ff65e33462828ba211d089f4`.
+OpenRouter `minimax/hailuo-3-max` (5 s, 480p,
+`aigc_watermark=true`, USD 0.25) returned a native TC260 AIGC label but no
+visible `MINIMAX | hailuo AI` composite; SHA-256
+`c850c79df6475e12a219ab6a4927b874c82a3ab783175f75acc6aa7513d2c303`.
+WaveSpeedAI `openai/sora-2/text-to-video` (4 s, 720p) and
+`kwaivgi/kling-v1.6-t2v-standard` (5 s, 720p) returned neither their registered
+visible marks nor locally readable provenance; SHA-256 respectively
+`85c29592fdfdac882a6536f6c27781c5d4f6a19b49681808eb744d0e33b63281`
+and `392c4bd279ac94fa573f051b514b243c933637fdc7d0dae2df4af1f2312a85d0`.
+Each result was checked through the explicit provider video path, not only the
+auto arbiter, and returned no stable mark. The files are not fixtures: the two
+clean exports assert no supported signal, while the OpenRouter outputs need
+their model-specific redistribution terms settled before public inclusion.
+For fixture collection, use the consumer surfaces that apply the marks rather
+than repeating these aggregator routes. In particular, the provider option
+names `watermark` and `aigc_watermark` proved to request machine-readable
+provenance on these routes, not the visible overlays their names might imply.
+
+**Direct Google Flow control (2026-09-03).** Two authenticated Veo 3.1 Fast
+generations used the same neutral blue-mug scene at 720p for 20 Flow credits
+each. With the account's `Visible watermarking` setting off, the downloaded
+8-second MP4 had valid Google C2PA and SynthID but no visible mark (SHA-256
+`f15454c2adda75fd79fcb8561e24088fa715f560e3c300c9f68e22fbc7275a20`).
+That clean control exposed a false positive: the current auto arbiter selected
+`hailuo` on all 192 frames and consequently misattributed the platform to
+MiniMax, while the explicit `veo` path correctly found no mark. With the
+setting on, the second 8-second MP4 carried low-contrast `Veo` text at the fixed
+bottom-right position, and the shipped detector selected `veo` on all 192
+frames (SHA-256
+`e778194b545e34dafd2d5be58691031a070862890c41e6c527a652a114a7c7a4`).
+The marked file is committed as the real provider original; the clean control
+remains outside the repository until its Hailuo false positive is fixed and
+locked by a negative regression test. Google documents both the user-controlled
+visible-watermark setting and invisible SynthID on every Flow output.
+
+**Direct Hailuo AI control (2026-09-03).** An authenticated MiniMax H3
+generation used a neutral blue-mug scene, 2K output, and 60 top-up credits. The
+download menu separately offered `Remove watermark` and `With Watermark`; the
+latter produced a 2944 x 1248, 5-second MP4 carrying the complete lower-right
+`MINIMAX | hailuo AI` composite and a TC260 AIGC label naming MiniMax as the
+producer. The shipped detector selected `hailuo` on all 124 frames (SHA-256
+`6152609e0339c443af79e244440e1b1050f3c615a50f76bfaf6146584e68142f`).
+This provider original is committed as the real Hailuo regression fixture and
+confirms that the direct consumer export differs from the metadata-only
+OpenRouter result above.
 
 **Learned detectors change the visible-mark precision/recall tradeoff; they do not establish a universal separator.** The visible-watermark-detection literature has moved to learned segmentation and object detection (WDNet WACV'21 arXiv:2012.07616; SLBR ACM MM'21, open code and weights; the PRCV'18 large-scale detector; Su et al. survey 2025). The cited arXiv:1705.08593 paper reports a method that significantly reduces false matches and eliminates them after rejecting a small fraction of matches on its electron-microscopy task; it does not prove an information-theoretic limit for watermark detection. Learned watermark detectors also rely on large, pattern-diverse labeled datasets built with synthetic composites (PRCV'18: 60k images / 80 watermark classes; CLWD: 60k / 160 marks), and transfer depends on the diversity represented in training. Inference can be cheap (WDNet reports roughly 8 ms at 256x256), while the labeled-data and evaluation pipeline remain the larger project cost. A learned detector is therefore a possible future operating point, not evidence that the current NCC gate is theoretically optimal.
 

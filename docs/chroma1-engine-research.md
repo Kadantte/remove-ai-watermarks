@@ -112,8 +112,9 @@ one observed cross-source spread):
   Derived by the shipped rule: 0.08 + (0.08 - 0.04) = 0.12, rounded to the
   measured rung **0.125**, which was then oracle-verified clean on both worst
   sources. Oracle: the public `ai.azure.com/nextgen/validate` page; its
-  `Inconclusive` verdict is the site's watermark-negative, weaker than an
-  API-level `Watermark: false`, the same caveat the qwen cohort carries.
+  `Inconclusive` verdict is the site's clean outcome and provides the provider
+  oracle used for this certification. The API exposes a more detailed report,
+  not a different class of certification.
 
 ## Fidelity at the floors (scripts/fidelity_metrics.py)
 

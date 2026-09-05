@@ -38,11 +38,13 @@ MARKS = {
     # stacked and ITALIC-SLANTED. A rare one-line variant exists, but the stacked block
     # is dominant.
     "yuanbao_alpha.png": "元宝\nAI生成",
-    # Kling (可灵) stamps a thin light-gray one-line "可灵AI 3.0" bottom-right (an
-    # "Omni" suffix variant and a latin "KlingAI 3.0" variant also exist; the CJK
-    # run without the suffix is the common core). The leading spiral logo is NOT
-    # rendered (logos vary; the text run discriminates).
+    # Older Kling (可灵) exports stamp a thin light-gray one-line "可灵AI 3.0"
+    # bottom-right. The leading spiral logo is NOT rendered (logos vary; the text
+    # run discriminates).
     "kling_alpha.png": "可灵AI 3.0",
+    # Current IMAGE 3.0 exports use the Latin ``KlingAI 3.0`` run. Keep it as a
+    # second installed silhouette rather than replacing the measured CJK variant.
+    "kling_latin_alpha.png": "KlingAI 3.0",
     # The "cat-logo" candidate stamps an outline cat-head plus bold "AI生成",
     # bottom-right. It remains unregistered pending sufficient calibration coverage.
     "catlogo_alpha.png": "cat logo + AI生成",
@@ -96,7 +98,12 @@ MARK_OPTS: dict[str, dict[str, Any]] = {
     "qingyan_alpha.png": {"font": "/System/Library/Fonts/Hiragino Sans GB.ttc", "font_index": 2},
     # LibLibAI uses an Arial-class grotesque.
     "liblib_alpha.png": {"font": "/System/Library/Fonts/Supplemental/Arial.ttf"},
+    "kling_latin_alpha.png": {"font": "/System/Library/Fonts/HelveticaNeue.ttc", "font_index": 1},
 }
+
+# ``kling_latin`` is a variant of the registered ``kling`` row, not a second
+# registry key, so it cannot be derived from ``mark_keys()`` above.
+_REGISTERED.add("kling_latin_alpha.png")
 
 
 def _fit_font(

@@ -333,7 +333,7 @@ synthetic silhouettes for the current four-point diamond and legacy `Veo`
 text. Seedance uses a synthetic rounded boxed-`AI` silhouette, while Dola uses
 an OpenCV-font `Dola AI` silhouette. Hailuo AI uses a synthetic waveform,
 MINIMAX/Hailuo AI text, separator, and ring. Kling AI combines synthetic font
-variants with a ring approximation of its swirl; the logo path rescues
+and capitalization variants with a ring approximation of its swirl; the logo path rescues
 wordmarks whose version or font differs, while the edge and white-label gates
 reject recurring scene texture. All fixed-mark searches are bounded to the
 expected lower-frame area and calibrated independently. A strong relocated Veo
@@ -345,7 +345,7 @@ normalized representations across all detectors, and caches resized synthetic
 template features for the fixed stream geometry. Provider confidence scales
 are not comparable: selection applies each provider's temporal arbiter and
 takes the first stable result in specificity order (`sora`, `veo`, `seedance`,
-`dola`, `hailuo`, `kling`). An explicit mark uses the same scan path with one
+`doubao`, `dola`, `hailuo`, `kling`). An explicit mark uses the same scan path with one
 candidate. Removal also collects authoritative per-frame timestamps for the
 encoder, while identification omits that unused ffprobe pass.
 
@@ -1199,8 +1199,8 @@ the platform sentence `identify` reports for it, and the metadata signals that
 confirm its vendor. `identify._VISIBLE_MARK_PLATFORM` and the signal mapping in
 `api.visible_provenance` are derived from those rows rather than hand-maintained
 beside them, so registering a mark is one edit. Two marks carry no platform of
-their own: the Gemini sparkle has its own higher-confidence path, and the
-capture-less pill is too weak to attribute.
+their own: the Gemini sparkle has its own higher-confidence path, and the pill
+alone is too weak to attribute.
 
 The set of marks that veto the pill is DERIVED from the registry rows: every mark
 under the same label regime (`tc260`) belonging to a different product. It used to
@@ -1284,6 +1284,15 @@ be represented by the shared base:
 - [`baidu_engine.py`](../src/remove_ai_watermarks/baidu_engine.py)
 - [`liblib_engine.py`](../src/remove_ai_watermarks/liblib_engine.py)
 - [`microsoft_engine.py`](../src/remove_ai_watermarks/microsoft_engine.py)
+
+Kling keeps two independently gated silhouettes under one registry key. The
+older measured cohort uses `可灵AI 3.0`; a direct authenticated IMAGE 3.0 export
+on 2026-09-04 uses `KlingAI 3.0`. The Latin template scored 0.429 on that 1024 x
+1024 provider original. Its narrow 0.9/1.0/1.1 scale ladder scored at most 0.349
+across the 94 available neighboring real and synthetic image controls, while an
+adversarial solid corner blob reached 0.379, so its strict gate is 0.40. This is
+one-positive provisional calibration, intentionally separate from the older
+CJK detector rather than presented as broad recall evidence.
 
 The measured Microsoft badge variant (2026-08-27 registration) is the first
 `tr`-corner mark and the first `long`-side scale basis: the pill tracks the
@@ -1406,12 +1415,15 @@ correlate with textured corners, not with pills: the edge-NCC keys on "text-like
 structure top-left". As with the Jimeng wordmark's silhouette, no threshold repairs
 this; a bare arm needs a detector that keys on the pill's rounded-rectangle
 geometry, and until one exists the bare-arm question is settled by this
-measurement, not by gate tuning. Harness: `data/spaces/_pill_bare_measure.py`
+measurement, not by gate tuning. The local calibration harness is not tracked.
 (cohorts A/B/C over the no-signal pool).
 
-The capture-less Jimeng pill lives in
+The weak Jimeng pill detector lives in
 [`pill_engine.py`](../src/remove_ai_watermarks/pill_engine.py). It uses a
-synthetic silhouette for detection and a fixed top-left footprint.
+synthetic silhouette for detection and a fixed top-left footprint. Its public,
+published real-world regression carrier is
+`data/fixtures/visible/jimeng_pill/provider-published-example.jpg`; the direct
+detector scores the pill at 0.28 and the same image's Jimeng wordmark at 0.61.
 
 Each engine has a corresponding test module under [`tests/`](../tests/).
 Shared behavior is covered by:
@@ -1434,10 +1446,10 @@ negative, so the bar stays at 0.35. Through the shipped arbiter
 (`identify_video`): 32/39 selected as doubao, 0/25 false; the remainder split
 between no stable run (5) and cross-template ties handed to earlier table
 entries (sora 1, kling 1) -- the registry's known order-decides behavior, not a
-doubao-specific defect. Harness: `data/spaces/_doubao_seq_measure.py`.
+doubao-specific defect. The local sequence-calibration harness is not tracked.
 
 Two further video candidates were measured and PARKED the same day (2026-08-28,
-`data/spaces/_rh_jm_video_calibrate.py`): the Jimeng CN wordmark does not
+local RunningHub/Jimeng video calibration): the Jimeng CN wordmark does not
 separate on video (1/5 positives vs 2/25 negatives hold a 12-frame 0.35 run --
 the same silhouette-generality the image jimeng engine documents), and
 RunningHub video separates (1/2 positives, 0/25 negatives) but a two-positive

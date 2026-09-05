@@ -1,19 +1,21 @@
 """Kling AI (可灵AI, Kuaishou) visible watermark detector/localizer.
 
-Kling AI stamps its generations with a thin, light-gray "可灵AI 3.0" text strip in the
-bottom-right corner, preceded by the vendor's spiral logo (not part of the detection
-silhouette -- logos vary between releases, the text run is what discriminates).
-Known variants: an "Omni" suffix release, a latin "KlingAI 3.0" release, and a
-version-less "可灵AI" -- the silhouette targets the common "可灵AI 3.0" core, so the
-suffix variants are only caught when the core run is bold enough (measured below).
+Kling AI stamps its generations with a thin, light-gray text strip in the
+bottom-right corner, preceded by the vendor's spiral logo (not part of the
+detection silhouette -- logos vary between releases, the text run is what
+discriminates). Separate silhouettes cover the older "可灵AI 3.0" release and
+the current IMAGE 3.0 "KlingAI 3.0" release. An "Omni" suffix and a version-less
+"可灵AI" remain outside the calibrated pair.
 
 Detection matches the bundled glyph silhouette against the corner. Removal unions
-the pixel-derived footprint with that silhouette aligned to the winning match box,
+the pixel-derived footprint with the known silhouettes aligned to the winning match box,
 then sends the hybrid mask through the shared **localize -> fill** path in
-``region_eraser``; it is not reverse-alpha. The asset
-(``assets/kling_alpha.png``) is a font-rendered synthetic silhouette from
-``scripts/render_vendor_silhouettes.py``, never cut from an upload. The detector also
-feeds ``identify`` as the medium-confidence ``visible_kling`` signal via the registry.
+``region_eraser``; it is not reverse-alpha. This module supplies two tuned
+:class:`TextMarkConfig` instances (``assets/kling_alpha.png`` and
+``assets/kling_latin_alpha.png`` -- font-rendered synthetic silhouettes from
+``scripts/render_vendor_silhouettes.py``, never cut from an upload). The detector
+also feeds ``identify`` as the medium-confidence ``visible_kling`` signal via the
+registry.
 
 EVERY tuned number below was measured on the vendor cohort (30 TC260 carriers whose
 producer USCC 91110108335469089C names the entity, 2026-07-21; harness
@@ -25,13 +27,14 @@ producer USCC 91110108335469089C names the entity, 2026-07-21; harness
     box fractions below are fitted from the measured absolute mark rects.
   * ``alpha_height_frac`` comes from the silhouette aspect (0.239) at the fitted
     width, matching the aspect the fit converged on (0.25).
-  * Gate 0.35, one step above the clean arm's max: on the cohort-vs-clean run
+  * The CJK gate is 0.35, one step above the clean arm's max: on the cohort-vs-clean run
     (cohort-contamination-guarded, 286 hand-labeled clean frames) the clean arm
     scored p99 0.304 / max 0.320, and every cohort frame >= 0.35 carries a visible
     可灵AI 3.0 mark (9 of ~19 eyeballed visible marks fire = ~47% recall of visible
-    marks; the misses are the faint "Omni"-suffix release, the latin "KlingAI"
-    release and the version-less "可灵AI", which score 0.17-0.25 and cannot be
-    reached without engulfing the clean arm).
+    marks; the misses are the faint "Omni"-suffix release and the version-less
+    "可灵AI", which score 0.17-0.25 and cannot be reached without engulfing the
+    clean arm). The separately measured Latin IMAGE 3.0 variant is documented
+    beside ``_LATIN_CONFIG`` below.
   * STRICT ONLY (``provenance_ncc_factor`` 1.0): the sub-gate band holds real Kling
     variants AND the clean arm's top (clean p90 0.220 vs variant marks at 0.17-0.25
     -- they overlap), so a provenance-relaxed arm cannot separate them. No
@@ -49,6 +52,7 @@ producer USCC 91110108335469089C names the entity, 2026-07-21; harness
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import cv2
@@ -121,6 +125,23 @@ _CONFIG = TextMarkConfig(
     provenance_ncc_factor=1.0,
 )
 
+# Direct Kling IMAGE 3.0 export, 2026-09-04: the current Latin run measures
+# 0.095 x 0.028 of the short side inside the same bottom-right locate box. The
+# narrow ladder covers small rasterization shifts without admitting any of the
+# 94 available neighboring real/synthetic image controls (max 0.349, versus
+# 0.429 on the provider original). A deliberately adversarial solid corner blob
+# reaches 0.379, so the 0.40 gate stays above both measured negative arms. Keep
+# this a separate silhouette and gate:
+# replacing the CJK template would discard the older measured release.
+_LATIN_CONFIG = replace(
+    _CONFIG,
+    asset_name="kling_latin_alpha.png",
+    alpha_width_frac=0.095,
+    alpha_height_frac=0.028,
+    ladder=(0.9, 1.0, 1.1),
+    detect_ncc_threshold=0.40,
+)
+
 
 def _alpha_template() -> NDArray[Any] | None:
     """The bundled Kling AI alpha template (float [0,1]), or None."""
@@ -133,10 +154,29 @@ def _glyph_silhouette() -> NDArray[Any] | None:
 
 
 class KlingEngine(TextMarkEngine):
-    """Detect/localize the visible Kling AI "可灵AI 3.0" watermark (locate -> mask; mask feeds the fill)."""
+    """Detect/localize Kling AI's CJK and Latin 3.0 marks (locate -> mask -> fill)."""
 
     def __init__(self) -> None:
         super().__init__(_CONFIG)
+        self._latin = TextMarkEngine(_LATIN_CONFIG)
+
+    @staticmethod
+    def _best(*detections: TextMarkDetection) -> TextMarkDetection:
+        """Prefer an accepted variant, then retain the strongest rejected score."""
+        return max(detections, key=lambda detection: (detection.detected, detection.confidence))
+
+    def detect(self, image: NDArray[Any], *, provenance: bool = False) -> TextMarkDetection:
+        """Return the strongest CJK or Latin Kling wordmark verdict."""
+        return self._best(
+            super().detect(image, provenance=provenance),
+            self._latin.detect(image, provenance=provenance),
+        )
+
+    def detect_both(self, image: NDArray[Any] | None) -> tuple[TextMarkDetection, TextMarkDetection]:
+        """Scan each immutable variant once and combine strict/relaxed verdicts."""
+        cjk_strict, cjk_relaxed = super().detect_both(image)
+        latin_strict, latin_relaxed = self._latin.detect_both(image)
+        return self._best(cjk_strict, latin_strict), self._best(cjk_relaxed, latin_relaxed)
 
     def footprint_mask(
         self,
@@ -146,7 +186,7 @@ class KlingEngine(TextMarkEngine):
         dilate: int | None = None,
         detection: TextMarkDetection | None = None,
     ) -> NDArray[Any] | None:
-        """Add the detector-aligned Kling core to the pixel-derived footprint.
+        """Add detector-aligned Kling cores to the pixel-derived footprint.
 
         The legacy mask remains in the union because it can cover variant-specific
         strokes outside the synthetic core. The aligned alpha closes holes caused by
@@ -159,17 +199,19 @@ class KlingEngine(TextMarkEngine):
 
         det = detection if detection is not None else self.detect(image)
         legacy = super().footprint_mask(image, force=False, dilate=dilate, detection=det)
-        alpha = _alpha_template()
-        if alpha is None:
-            return legacy
         radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
-        core = self._aligned_alpha_mask(
-            image,
-            det,
-            alpha,
-            alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
-            dilate=radius,
-        )
-        if core is None:
-            return legacy
-        return core if legacy is None else cv2.bitwise_or(legacy, core)
+        result = legacy
+        for config in (_CONFIG, _LATIN_CONFIG):
+            alpha = _text_mark_engine.load_alpha_template(config.asset_name)
+            if alpha is None:
+                continue
+            core = self._aligned_alpha_mask(
+                image,
+                det,
+                alpha,
+                alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
+                dilate=radius,
+            )
+            if core is not None:
+                result = core if result is None else cv2.bitwise_or(result, core)
+        return result

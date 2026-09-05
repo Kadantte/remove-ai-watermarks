@@ -22,7 +22,7 @@ Entries:
   - ``doubao`` -- ByteDance Doubao "豆包AI生成" text strip, bottom-right.
   - ``jimeng`` -- ByteDance Jimeng / Dreamina "★ 即梦AI" wordmark, bottom-right.
   - ``qwen`` -- Alibaba Cloud Qwen "千问AI生成" text strip, bottom-right.
-  - ``kling`` -- Kuaishou Kling AI "可灵AI 3.0" text strip, bottom-right.
+  - ``kling`` -- Kuaishou Kling AI "可灵AI 3.0" / "KlingAI 3.0" strip, bottom-right.
   - ``yuanbao`` -- Tencent Yuanbao "元宝 / AI生成" two-line mark, bottom-right.
   - ``samsung`` -- Samsung Galaxy AI "Contenuti generati dall'AI" strip, bottom-left.
   - ``jimeng_pill`` -- Jimeng-basic "AI生成" pill, top-left (capture-less).
@@ -726,9 +726,9 @@ _REGISTRY: tuple[KnownMark, ...] = (
     ),
     _text_mark(
         "kling",
-        "Kling AI 可灵AI 3.0 text",
+        "Kling AI 可灵AI / KlingAI 3.0 text",
         "bottom-right",
-        platform="Kuaishou Kling AI (visible 可灵AI 3.0 mark detected)",
+        platform="Kuaishou Kling AI (visible 可灵AI / KlingAI 3.0 mark detected)",
         tc260_producer_codes=("91110108335469089C",),
     ),
     _text_mark(

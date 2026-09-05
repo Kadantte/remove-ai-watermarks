@@ -271,31 +271,32 @@ def _hailuo_template() -> NDArray[Any]:
 
 @lru_cache(maxsize=1)
 def _kling_templates() -> tuple[NDArray[Any], ...]:
-    """Return synthetic font variants for the Kling wordmark core."""
-    canvas = Image.new("L", (430, 104), 0)
-    draw = ImageDraw.Draw(canvas)
-    draw.text(
-        (2, 12),
-        "KLING AI",
-        font=_scalable_default_font(64),
-        fill=255,
-        stroke_width=1,
-        stroke_fill=255,
-    )
-    templates = [_crop_nonzero(np.asarray(canvas, dtype=np.uint8))]
-    for font in (cv2.FONT_HERSHEY_SIMPLEX, cv2.FONT_HERSHEY_DUPLEX):
-        cv_template = np.zeros((100, 500), dtype=np.uint8)
-        cv2.putText(
-            cv_template,
-            "KLING AI",
-            (2, 72),
-            font,
-            2.2,
-            255,
-            3,
-            cv2.LINE_AA,
+    """Return synthetic font and capitalization variants for the Kling wordmark core."""
+    templates: list[NDArray[Any]] = []
+    for text in ("KLING AI", "KlingAI"):
+        canvas = Image.new("L", (430, 104), 0)
+        ImageDraw.Draw(canvas).text(
+            (2, 12),
+            text,
+            font=_scalable_default_font(64),
+            fill=255,
+            stroke_width=1,
+            stroke_fill=255,
         )
-        templates.append(_crop_nonzero(cv_template))
+        templates.append(_crop_nonzero(np.asarray(canvas, dtype=np.uint8)))
+        for font in (cv2.FONT_HERSHEY_SIMPLEX, cv2.FONT_HERSHEY_DUPLEX):
+            cv_template = np.zeros((100, 500), dtype=np.uint8)
+            cv2.putText(
+                cv_template,
+                text,
+                (2, 72),
+                font,
+                2.2,
+                255,
+                3,
+                cv2.LINE_AA,
+            )
+            templates.append(_crop_nonzero(cv_template))
     return tuple(templates)
 
 
