@@ -93,3 +93,13 @@ Keep the current `tc260` head until then. The next provider-head fit should
 split that catalog by `ContentProducer` (Doubao, Jimeng, Qwen, Kling, and
 the rest) instead of one label-standard class. Do not treat a `tc260` score
 as a named manufacturer.
+
+The 2026-09-02 drift campaign set two preconditions for adding renderer
+drift rows to that fit. First, scale: 14 openai drift rows recovered exactly
+one near-miss row in leave-one-out while regressing a sibling cell through
+the shared negative pools (google -10 or meta -6 depending on variant), so
+drift rows should enter together with enough mass to hold every cell flat,
+not as a standalone patch. Second, scope: 6 of 12 Aug rows failed before
+the provider stage, so a drift fix that covers the whole cell needs Model 1
+in the loop. The `ContentProducer` split still needs metadata exported from
+the app database.

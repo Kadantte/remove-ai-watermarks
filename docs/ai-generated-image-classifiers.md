@@ -925,6 +925,24 @@ the next provider retrain promotes rows. Artifacts:
 `receipt-gate-shipped-2026-09-02/report.json` (open_two_misses),
 `aigen-drift-2026-09-02/manifest.json`.
 
+The 2026-09-02 provider-head retrain campaign then measured whether that
+drift is fixable at the Model 2 level, and it is not, not at n=14. The
+freeze provider table was first reproduced exactly (it is the UNGATED
+margin metric: openai 345/380, google 339/373, tc260 298/379; the shipped
+DEFINITELY-gated metric reads 319/310/292). Leave-one-out over the 12 Aug
+ChatGPT rows, fitted with the public retrain script verbatim, recovers
+exactly one row (the margin-0.00 near-miss): the two hard rejections keep
+openai below no_ai even when trained on 11 sibling Aug rows, and four more
+rows fail at Model 1 before a provider head ever runs. Full refits are
+deterministic and leave the detector byte-identical, but every variant
+trades one eval cell for another through the shared negative pools: the
+full-drift fit costs google 10 test rows, the openai-only fit costs the
+meta hold-out 6. Both candidates rejected, nothing shipped, the drift
+corpus stays eval-only, and the tc260 producer split is deferred because
+ContentProducer metadata lives in the app database, not beside the pixels.
+Revisit when the drift cell is larger or Model 1 joins. Artifacts:
+`provider-drift-retrain-2026-09-02/report.json`.
+
 Batch-1 then filled four more unmeasured domains under the same sieves
 (428→421 rows after phantom repair: UI screenshots, 150; Danbooru community
 digital art, 145; software-rendered matplotlib charts, 82; OpenStreetMap
