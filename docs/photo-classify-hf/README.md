@@ -66,6 +66,11 @@ ridge trained on that embedding at a 1% Open Images false-positive cut is
 the strongest Model 1 we measured. A small MLP on the same vectors, ANDed
 with the ridge, is the freeze DEFINITELY gate.
 
+The receipt gate (`receipt-gate-2026-09-02.npz`) ships in this repository
+alongside the freeze files, so it versions with the embedding space it was
+fitted on; the Python package carries a fallback copy for weights
+directories frozen before the gate existed.
+
 The 124-d bank is a different feature: patch-local residual ratios (FFT band
 energy, comb contrast, autocovariance) on 256 px tiles. On that bank, OpenAI
 versus Gemini is easy (AUC 0.989 in the research sweep) while "AI or not" is

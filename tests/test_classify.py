@@ -168,6 +168,43 @@ def test_receipt_gate_score_is_deterministic_and_bounded() -> None:
     assert -50.0 < first < 50.0
 
 
+def test_receipt_gate_prefers_the_weights_directory(tmp_path: Path) -> None:
+    from remove_ai_watermarks.classify import _load_receipt_gate, _receipt_gate_cache
+
+    source = np.load(Path("src/remove_ai_watermarks/assets") / RECEIPT_GATE_FILE)
+    weights = tmp_path / "weights"
+    weights.mkdir()
+    np.savez(
+        weights / RECEIPT_GATE_FILE,
+        w=source["w"],
+        b=source["b"],
+        mu=source["mu"],
+        sd=source["sd"],
+        threshold=99.0,
+    )
+    _receipt_gate_cache.clear()
+    try:
+        gate = _load_receipt_gate(weights)
+        assert gate["threshold"] == 99.0
+        mid = (RECEIPT_GATE_THRESHOLD + 99.0) / 2
+        result = classify_from_scores(1.0, 10.0, None, receipt_score=mid, receipt_threshold=gate["threshold"])
+        assert result.label == "ai"
+        assert classify_from_scores(1.0, 10.0, None, receipt_score=mid).label == "unknown"
+    finally:
+        _receipt_gate_cache.clear()
+
+
+def test_receipt_gate_falls_back_to_the_package_asset() -> None:
+    from remove_ai_watermarks.classify import _load_receipt_gate, _receipt_gate_cache
+
+    _receipt_gate_cache.clear()
+    try:
+        assert _load_receipt_gate(None)["threshold"] == RECEIPT_GATE_THRESHOLD
+        assert _load_receipt_gate(Path("/nonexistent-weights"))["threshold"] == RECEIPT_GATE_THRESHOLD
+    finally:
+        _receipt_gate_cache.clear()
+
+
 def _patch_definitely_runtime(monkeypatch: pytest.MonkeyPatch, *, forensic_calls: list[int]) -> None:
     """Patch classify internals so a plain PNG scores DEFINITELY on Model 1."""
     runtime = SimpleNamespace(
@@ -177,6 +214,7 @@ def _patch_definitely_runtime(monkeypatch: pytest.MonkeyPatch, *, forensic_calls
         ridge_threshold=RIDGE_THRESHOLD,
         mlp_threshold=MLP_THRESHOLD,
         provider_margin=PROVIDER_MARGIN,
+        weights_dir=None,
     )
     monkeypatch.setattr("remove_ai_watermarks.classify.is_available", lambda: True)
     monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device: runtime)
@@ -246,6 +284,7 @@ def test_124d_is_not_extracted_unless_definitely(monkeypatch: pytest.MonkeyPatch
         ridge_threshold=RIDGE_THRESHOLD,
         mlp_threshold=MLP_THRESHOLD,
         provider_margin=PROVIDER_MARGIN,
+        weights_dir=None,
     )
     monkeypatch.setattr("remove_ai_watermarks.classify.is_available", lambda: True)
     monkeypatch.setattr("remove_ai_watermarks.classify._get_runtime", lambda device: runtime)

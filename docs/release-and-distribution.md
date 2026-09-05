@@ -81,9 +81,11 @@ release fan-out. It holds the photo-classify freeze weights. The library extra
 type `publish`). Full mode downloads the four weight files from the GitHub
 Release tag `photo-classify-freeze-2026-08-31` (or the tag you pass) and
 uploads them with the card in `docs/photo-classify-hf/`. Card mode updates
-the README and `operating-point.json` only. A library version bump does not
-upload new heads. Pin a Hub revision in production so a later freeze cannot
-silently change installed clients.
+the README, `operating-point.json`, and the receipt-gate head staged from
+the package assets; freeze weights are untouched. A library version bump
+alone does not upload new heads -- bump the pinned Hub revision when a new
+head must reach installed clients. Pin a Hub revision in production so a
+later freeze cannot silently change installed clients.
 
 The workflow can also be started manually with an optional version input.
 

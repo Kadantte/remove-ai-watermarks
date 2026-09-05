@@ -10,6 +10,9 @@ provider.pt either at the root or in run1/.
 
 Needs HF_TOKEN with write role. The GitHub Action
 publish-photo-classify-hf.yml injects secrets.HF_TOKEN.
+
+Card mode uploads the README, operating-point.json, and the receipt-gate
+head (staged from the package assets) without touching the freeze weights.
 """
 
 from __future__ import annotations
@@ -29,7 +32,9 @@ PROBE_FILE = "probe-weights-clip-l-ft.npz"
 DETECTOR_FILE = "detector.pt"
 PROVIDER_FILE = "provider.pt"
 WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
+GATE_FILE = "receipt-gate-2026-09-02.npz"
 REPO_ROOT = Path(__file__).resolve().parents[1]
+GATE_SOURCE = REPO_ROOT / "src" / "remove_ai_watermarks" / "assets" / GATE_FILE
 CARD_DIR = REPO_ROOT / "docs" / "photo-classify-hf"
 
 
@@ -56,9 +61,14 @@ def stage_card(dest: Path) -> None:
     operating = CARD_DIR / "operating-point.json"
     if not readme.is_file() or not operating.is_file():
         raise SystemExit(f"Hub card missing under {CARD_DIR}")
+    if not GATE_SOURCE.is_file():
+        raise SystemExit(f"receipt-gate asset missing: {GATE_SOURCE}")
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(readme, dest / "README.md")
     shutil.copy2(operating, dest / "operating-point.json")
+    # The gate head versions with the model: card mode carries it even when
+    # the four freeze weight files are not being re-uploaded.
+    shutil.copy2(GATE_SOURCE, dest / GATE_FILE)
 
 
 def _place(src: Path, dest: Path) -> None:
@@ -85,7 +95,7 @@ def publish(stage: Path, *, token: str, message: str) -> str:
         repo_id=HUB_REPO,
         repo_type="model",
         commit_message=message,
-        allow_patterns=["README.md", "operating-point.json", *WEIGHT_FILES],
+        allow_patterns=["README.md", "operating-point.json", *WEIGHT_FILES, GATE_FILE],
     )
     return getattr(commit, "oid", "") or ""
 

@@ -1008,8 +1008,13 @@ photo freeze: CLIP-L-ft ridge AND freeze MLP, then 124-d focal heads only on
 DEFINITELY. Since 2026-09-02 a linear receipt-document gate runs first on
 that DEFINITELY path, on the same CLIP vector: a hit publishes `unknown`
 (detector stays `definitely`, provider is not read, 124-d extraction is
-skipped). The head ships as `assets/receipt-gate-2026-09-02.npz`; its
-threshold is pinned in `classify.py` and in the operating-point sidecar.
+skipped). The head ships with the model: `receipt-gate-2026-09-02.npz` in
+the Hub snapshot or `RAIW_CLASSIFY_WEIGHTS` directory, with the package
+asset `src/remove_ai_watermarks/assets/receipt-gate-2026-09-02.npz` as
+the fallback for weights directories frozen before the gate existed (the
+head is fitted on the freeze CLIP-L-ft embedding space, so it versions
+with the model, not with the code); its threshold is pinned in
+`classify.py` and in the operating-point sidecar.
 Training data and certification live in
 `receipt-gate-shipped-2026-09-02/report.json` in the research tree; positives
 are CORD-v2 train (800, CC BY 4.0, disjoint from the CORD test split the

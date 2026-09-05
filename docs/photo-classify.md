@@ -135,8 +135,10 @@ publishes `unknown` and skips the 124-d provider pass.
 | ai_test DEFINITELY cost | 7/1,847 (0.38%) |
 
 Artifacts: `receipt-gate-shipped-2026-09-02/report.json` (private research
-tree). The head ships in the package assets; the operating point records it
-in [photo-classify-hf/operating-point.json](photo-classify-hf/operating-point.json).
+tree). The head ships with the model (`receipt-gate-2026-09-02.npz` in the
+Hub snapshot, package asset as the fallback for pre-gate freezes); the
+operating point records it in
+[photo-classify-hf/operating-point.json](photo-classify-hf/operating-point.json).
 
 ## Limits
 

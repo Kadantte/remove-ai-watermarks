@@ -34,6 +34,8 @@ _WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 # capture-style receipts against 2,400 ai_train negatives. Threshold is the
 # min of the 1st-percentile scores on CORD validation and a synthetic
 # holdout; no field-receipt pixels were used for training or the threshold.
+# The head versions with the model (Hub snapshot or RAIW_CLASSIFY_WEIGHTS
+# directory); the package asset is the fallback for pre-gate freezes.
 RECEIPT_GATE_FILE = "receipt-gate-2026-09-02.npz"
 RECEIPT_GATE_THRESHOLD = 2.0432573877459697
 
@@ -61,24 +63,36 @@ PUBLIC_PROVIDER: dict[str, PixelProvider] = {
 
 _runtime: _Runtime | None = None
 _runtime_lock = threading.Lock()
-_receipt_gate: dict[str, Any] | None = None
+_receipt_gate_cache: dict[str, dict[str, Any]] = {}
 
 
-def _load_receipt_gate() -> dict[str, Any]:
-    """Load the bundled receipt-gate head once (numpy-only, no download)."""
-    global _receipt_gate
-    if _receipt_gate is None:
-        import numpy as np
+def _load_receipt_gate(folder: Path | None = None) -> dict[str, Any]:
+    """Load the receipt-gate head, preferring the weights directory.
 
-        payload = np.load(Path(__file__).parent / "assets" / RECEIPT_GATE_FILE)
-        _receipt_gate = {
-            "w": np.asarray(payload["w"], dtype=np.float64),
-            "b": float(payload["b"]),
-            "mu": np.asarray(payload["mu"], dtype=np.float64),
-            "sd": np.asarray(payload["sd"], dtype=np.float64),
-            "threshold": float(payload["threshold"]),
-        }
-    return _receipt_gate
+    Model-side first (the Hub snapshot and ``RAIW_CLASSIFY_WEIGHTS`` carry
+    ``receipt-gate-2026-09-02.npz``), with the bundled package asset as the
+    fallback for weights directories frozen before the gate existed. The
+    head is fitted on the freeze CLIP-L-ft embedding space, which is why it
+    versions with the model, not with the code.
+    """
+    import numpy as np
+
+    key = str(folder) if folder is not None else "<package>"
+    if key in _receipt_gate_cache:
+        return _receipt_gate_cache[key]
+    source: Path | None = _find_weight(folder, RECEIPT_GATE_FILE) if folder is not None else None
+    if source is None:
+        source = Path(__file__).parent / "assets" / RECEIPT_GATE_FILE
+    payload = np.load(source)
+    gate = {
+        "w": np.asarray(payload["w"], dtype=np.float64),
+        "b": float(payload["b"]),
+        "mu": np.asarray(payload["mu"], dtype=np.float64),
+        "sd": np.asarray(payload["sd"], dtype=np.float64),
+        "threshold": float(payload["threshold"]),
+    }
+    _receipt_gate_cache[key] = gate
+    return gate
 
 
 def receipt_gate_score(clip_vector: Any) -> float:
@@ -207,7 +221,7 @@ def classify_pixels(path: Path, *, device: str | None = None) -> PixelClassifica
             ridge_threshold=runtime.ridge_threshold,
             mlp_threshold=runtime.mlp_threshold,
         )
-        gate = _load_receipt_gate()
+        gate = _load_receipt_gate(runtime.weights_dir)
         r_score = receipt_gate_score(clip_vector) if level == "definitely" else None
         provider_scores = None
         if r_score is not None and r_score < gate["threshold"]:
@@ -244,6 +258,7 @@ class _Runtime:
     ridge_threshold: float
     mlp_threshold: float
     provider_margin: float
+    weights_dir: Path | None
 
 
 def _resolve_device(device: str | None) -> Any:
@@ -274,7 +289,7 @@ def _weights_dir() -> Path:
             snapshot_download(
                 repo_id=WEIGHTS_REPO,
                 revision=WEIGHTS_REVISION,
-                allow_patterns=[*_WEIGHT_FILES, OPERATING_POINT_FILE],
+                allow_patterns=[*_WEIGHT_FILES, OPERATING_POINT_FILE, RECEIPT_GATE_FILE],
             )
         )
     except Exception as exc:
@@ -379,6 +394,7 @@ def _load_runtime(device: Any) -> _Runtime:
         ridge_threshold=ridge_threshold,
         mlp_threshold=mlp_threshold,
         provider_margin=provider_margin,
+        weights_dir=folder,
     )
 
 

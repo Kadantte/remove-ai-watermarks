@@ -16,7 +16,7 @@ on:
         description: "Type publish"
         required: true
       mode:
-        description: "full = card plus weights from the release tag; card = README and operating-point only"
+        description: "full = card plus weights from the release tag; card = README, operating-point, and receipt gate only"
         type: choice
         options:
           - full
