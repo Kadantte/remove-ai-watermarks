@@ -3230,7 +3230,6 @@ all = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "onnxruntime" },
-    { name = "openai" },
     { name = "opencv-python-headless" },
     { name = "pillow-heif" },
     { name = "pywavelets" },
@@ -3262,6 +3261,7 @@ dev = [
     { name = "invisible-watermark" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "openai" },
     { name = "opencv-python-headless" },
     { name = "packaging" },
     { name = "pyright" },
@@ -3342,9 +3342,6 @@ text-restoration = [
 trustmark = [
     { name = "trustmark", marker = "python_full_version < '3.13'" },
 ]
-verify = [
-    { name = "openai" },
-]
 video = [
     { name = "av" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
@@ -3374,7 +3371,7 @@ requires-dist = [
     { name = "numpy", marker = "python_full_version < '3.13' and extra == 'pixels'", specifier = ">=1.24.0" },
     { name = "onnxruntime", marker = "extra == 'lama'", specifier = ">=1.24.0" },
     { name = "onnxruntime", marker = "extra == 'migan'", specifier = ">=1.24.0" },
-    { name = "openai", marker = "extra == 'verify'", specifier = ">=2.52.0" },
+    { name = "openai", marker = "extra == 'dev'", specifier = ">=2.52.0" },
     { name = "opencv-python-headless", marker = "extra == 'pixels'", specifier = ">=4.8.0" },
     { name = "packaging", marker = "extra == 'dev'", specifier = ">=24.0" },
     { name = "paddleocr", marker = "extra == 'text-draft'", specifier = ">=3.3.3" },
@@ -3396,7 +3393,7 @@ requires-dist = [
     { name = "remove-ai-watermarks", extras = ["pixels"], marker = "extra == 'visible'" },
     { name = "remove-ai-watermarks", extras = ["qwen-zimage", "lama"], marker = "extra == 'text-restoration'" },
     { name = "remove-ai-watermarks", extras = ["video"], marker = "extra == 'dev'" },
-    { name = "remove-ai-watermarks", extras = ["video", "heif", "detect", "trustmark", "text-restoration", "migan", "classify", "verify"], marker = "extra == 'all'" },
+    { name = "remove-ai-watermarks", extras = ["video", "heif", "detect", "trustmark", "text-restoration", "migan", "classify"], marker = "extra == 'all'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'lama'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'migan'" },
     { name = "remove-ai-watermarks", extras = ["visible"], marker = "extra == 'video'" },
@@ -3412,7 +3409,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'diffusion'", specifier = ">=5,<6" },
     { name = "trustmark", marker = "python_full_version < '3.13' and extra == 'trustmark'", specifier = ">=0.8.0" },
 ]
-provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "classify", "verify", "lama", "migan", "dev", "all"]
+provides-extras = ["pixels", "heif", "visible", "video", "detect", "diffusion", "qwen-zimage", "text-restoration", "text-draft", "trustmark", "classify", "lama", "migan", "dev", "all"]
 
 [[package]]
 name = "requests"

@@ -277,7 +277,7 @@ def test_missing_optional_sdk_has_install_hint(
 ) -> None:
     monkeypatch.setattr(provenance, "is_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match=r"remove-ai-watermarks\[verify\]"):
+    with pytest.raises(RuntimeError, match=r"uv sync --extra dev"):
         _verify(tmp_clean_png)
 
 

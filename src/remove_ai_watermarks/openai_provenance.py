@@ -1,11 +1,11 @@
-"""Official OpenAI SynthID verification with metadata-independent input.
+"""Development-only OpenAI SynthID oracle with metadata-independent input.
 
 The Content Provenance API returns C2PA and SynthID outcomes independently.
 This module removes AI provenance metadata before upload, proves that the
 decoded RGBA raster did not change, and then consumes only the SynthID result.
-It is intentionally separate from :func:`identify`: calling it uploads one
-sanitized raster to OpenAI and therefore always requires an explicit user
-action.
+It is intentionally absent from the public package API and CLI. Development
+experiments call it explicitly, upload one sanitized raster to OpenAI, and
+therefore always require an explicit acknowledgement.
 
 The OpenAI SDK is optional. Imports remain lazy so local and metadata-only
 paths do not acquire a network client dependency.
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 OpenAISynthIDStatus = Literal["detected", "not_detected"]
 
 DETECTOR_ID = "openai-content-provenance-synthid-v1"
-INSTALL_HINT = "install the verification extra: uv add 'remove-ai-watermarks[verify]'"
+INSTALL_HINT = "install the development dependencies: uv sync --extra dev"
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 120.0
 # One acknowledgement authorizes one upload. The SDK otherwise retries some

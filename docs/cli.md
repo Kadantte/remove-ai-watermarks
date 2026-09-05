@@ -15,7 +15,6 @@ defaults. This page focuses on choosing the right command.
 | --- | --- |
 | `metadata` and metadata-only `identify` | Default package |
 | `classify` | `remove-ai-watermarks[classify]` |
-| `verify-openai-synthid` | `remove-ai-watermarks[verify]`, API access, and `OPENAI_API_KEY` |
 | Visible signals in `identify` | `remove-ai-watermarks[visible]` (`pixels` is the minimal runtime) |
 | Open DWT-DCT signals in `identify` | `remove-ai-watermarks[detect]` |
 | Adobe TrustMark signals in `identify` on Python 3.11-3.12 | `remove-ai-watermarks[trustmark]` |
@@ -69,41 +68,6 @@ remove-ai-watermarks identify image.png --no-visible
 Despite the historical option name, `--no-visible` skips all pixel detectors,
 including visible marks, open DWT-DCT, and TrustMark. Metadata inspection still
 runs.
-
-## Verify OpenAI SynthID from pixels
-
-```bash
-uv tool install --force "remove-ai-watermarks[verify]"
-remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload
-remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload --json
-```
-
-This is an explicit remote check against OpenAI's official Content Provenance
-API, not the incomplete local OpenAI carrier research model. Before upload, the
-command writes a temporary copy with AI provenance metadata removed and aborts
-unless the decoded RGBA pixels are identical to the source. It then reads only
-the API's independent `synthid` entry; a C2PA-only response cannot become a
-SynthID detection. The source is never modified.
-
-The API supports PNG, JPEG, and WebP files up to 50 MiB. The command requires
-`OPENAI_API_KEY` and an organization with endpoint access. Because the sanitized
-raster is uploaded to OpenAI and the endpoint is not eligible for Zero Data
-Retention, `--acknowledge-upload` is mandatory. This command is never called by
-`identify`. `not_detected` means only that OpenAI's verifier did not recognize a
-supported watermark in this file; it is not proof of human authorship.
-
-The built-in client bounds the request at 120 seconds and disables automatic
-SDK retries, so one acknowledgement cannot silently upload the media multiple
-times. A timeout, disconnect, malformed response, access failure, or rate limit
-is an error, never a negative watermark verdict. API failures expose status,
-error code, request id, `Retry-After`, and whether an explicit caller-controlled
-retry is appropriate through `OpenAIProvenanceError`; the verifier itself never
-retries an upload.
-The JSON result uses the same provider-scope, backend, pixel-preservation, and
-metadata-use audit fields as `verify_openai_synthid`.
-
-The Python API enforces the same boundary with the required explicit intent
-flag `verify_openai_synthid(path, acknowledge_upload=True)`.
 
 ## Classify a photograph from pixels
 
@@ -367,7 +331,7 @@ different container extension.
 Visible video labels and invisible video watermarks are not handled by this
 command.
 
-## Remove video SynthID
+## Apply the video-pixel SynthID-removal profile
 
 ```bash
 uv tool install --force "remove-ai-watermarks[video,diffusion]"
@@ -405,6 +369,12 @@ short-clip calibration and the complete public eight-second Veo carrier in the
 calibration certifies the shipped operating point; the paired check above is an
 optional runtime audit, not a separate result state.
 
+On completion the command reports that video pixels were regenerated with the
+calibrated profile, not that this file received a fresh negative verdict. It
+separately prints `Audio watermark: UNVERIFIED` because source audio is copied
+unchanged when present. `video all` and `video batch` use the same wording and
+never fold the audio status into the visual action.
+
 ## Remove a supported visible video mark
 
 ```bash
@@ -435,7 +405,8 @@ provider.
 
 The video stream is transcoded and the complete original audio stream is
 copied without truncating an audio tail that extends beyond the final video
-frame. The encoder probes the source stream and preserves supported 8-bit
+frame. The CLI reports that copied audio as watermark-unverified. The encoder
+probes the source stream and preserves supported 8-bit
 chroma sampling, color range/matrix/transfer/primaries tags, and MP4/MOV track
 timescale. For a variable-frame-rate source, decoded PTS are carried through a
 timestamped in-memory NUT bridge so the output retains the source frame

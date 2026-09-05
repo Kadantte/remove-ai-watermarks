@@ -1,4 +1,4 @@
-"""Shared configuration for oracle-certified video SynthID removal."""
+"""Shared configuration for the calibrated video-pixel SynthID-removal profile."""
 
 DEFAULT_VIDEO_SYNTHID_VAE = "stabilityai/sd-vae-ft-mse"
 # The certified profile is a perturbation-to-signal ratio, so it is pinned against

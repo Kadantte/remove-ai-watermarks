@@ -188,6 +188,15 @@ successful output set has no silent holes. An invisible batch loads one VAE
 runtime and reuses it across every compatible file; a failed model load is
 reported per file without retrying the same multi-GB initialization.
 
+Cleanup results separate an action from a watermark verdict. The retained
+`invisible_removed` boolean means only that the visual regeneration stage ran;
+`visual_invisible_action` exposes `not_run` or `regenerated` without implying a
+fresh oracle result. `VideoAudioStatus` records `copied_if_present` and
+`unverified` for metadata, visible, invisible, all, and batch outputs. It is
+static result metadata: no extra probe, decode, model, or network call runs. A
+visible no-op or failed batch item with no published output reports
+`stream_action=not_written` instead.
+
 Native MP4/MOV TC260 labels follow TC260-PG-20257A:
 `moov.udta.meta.keys` maps an `AIGC` key to a raw JSON value in `ilst`.
 [`_internal/isobmff.py`](../src/remove_ai_watermarks/_internal/isobmff.py) walks those
@@ -277,7 +286,7 @@ current-frame fill. The same module supplies the motion-compensated metric used
 by the invisible-video sweep.
 
 [`video_invisible.py`](../src/remove_ai_watermarks/video_invisible.py)
-implements the oracle-certified video SynthID removal engine. It samples frames
+implements the calibrated video-pixel SynthID-removal engine. It samples frames
 uniformly, resizes to a VAE-aligned geometry, encodes each frame to latent
 space, applies one seeded spatial-noise field across the entire sequence, and
 decodes fresh pixels. Reusing a single noise field avoids independent
@@ -624,7 +633,7 @@ evidence and never turns a local negative into a clean verdict.
 The result envelope also names the signal family, provider scope, backend,
 whether metadata contributed to the verdict, whether pixels were preserved,
 and an explicit reason for unsupported or indeterminate results. These fields
-are shared with the official OpenAI verifier's JSON boundary.
+are shared with the development OpenAI oracle's JSON boundary.
 
 The production router selects `synthid-periodic-tile-large-v1` above 10 through 18
 megapixels when both dimensions are at least 2,048 pixels. It evaluates all
@@ -923,14 +932,12 @@ fallback in its 1-10 megapixel domain, and large-v1 above 10 megapixels. A
 20-image real-corpus drift check was byte-identical after the earlier v2 integration.
 The calibration history and caveats are in the linked detector research plan.
 
-### Official OpenAI SynthID verifier
+### Development OpenAI SynthID oracle
 
 [`openai_provenance.py`](../src/remove_ai_watermarks/openai_provenance.py)
-provides the explicit remote production backend exposed as
-`verify-openai-synthid`. It is intentionally separate from `identify`, because
-one invocation uploads a sanitized raster to OpenAI. The CLI requires
-`--acknowledge-upload`, and the optional OpenAI SDK lives in the independent
-`verify` extra.
+provides a development-only remote oracle. It is absent from the installed CLI
+and top-level Python API, and `identify` never imports it. Development
+dependencies include the optional OpenAI SDK.
 
 The backend accepts only PNG, JPEG, and WebP. It computes a decoded RGBA pixel
 fingerprint, removes AI provenance metadata into a temporary file through
@@ -949,13 +956,13 @@ the endpoint, temporary basename, media type, byte count, timeout, retry policy,
 duration, HTTP status, error code, and request id when available, but omit the
 source path, image bytes, credentials, and decoded-pixel fingerprint.
 
-`OpenAIProvenanceError` preserves the status, API error code, request id,
+The internal `OpenAIProvenanceError` preserves the status, API error code, request id,
 `Retry-After` value, and a transient-only `retryable` flag. The library does not
 automatically act on that flag: an explicit caller invocation is required for
 every additional upload. Transport and schema failures remain errors rather
 than becoming `not_detected` or a local detector result.
 
-The result remains provider-scoped and positive-evidence-only. `not_detected`
+The development result remains provider-scoped and positive-evidence-only. `not_detected`
 does not mean human-created, and the official endpoint's published prohibition
 on repeated reverse-engineering or evasion queries prevents using this backend
 as an adaptive training or removal oracle.

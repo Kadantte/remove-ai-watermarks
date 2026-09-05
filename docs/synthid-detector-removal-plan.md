@@ -3339,10 +3339,13 @@ production watermark decoder: same-provider non-assertion rows crossed at a
 high rate, general-control specificity failed, and ordinary JPEG destroyed all
 but one positive. A post-hoc threshold above the temporal control maximum would
 retain 19 unique OpenAI rows, but that threshold has observed the holdout and
-is not a new expert. The official OpenAI verifier remains the provider-wide
-pixel route.
+is not a new expert. The official OpenAI verifier supplied the provider-wide
+development oracle.
 
-### 2026-08-14: production OpenAI verifier boundary
+### 2026-08-14: original OpenAI verifier boundary
+
+> Historical note: the public command and top-level API described below were
+> retired on 2026-09-05. The backend is now a development-only oracle.
 
 OpenAI's official Content Provenance API now supplies the production-grade
 OpenAI pixel verdict that the local experiments could not justify. The runtime
@@ -3467,8 +3470,8 @@ one.
 
 ### 2026-08-15: the same answer from the OpenAI verifier
 
-The equivalent frozen batch went through the official OpenAI endpoint on
-`verify-openai-synthid`, two OpenAI positives in a source and `replace-chroma`
+The equivalent frozen batch went through the official OpenAI endpoint using
+the then-public verifier, two OpenAI positives in a source and `replace-chroma`
 pair each, four calls, one pass. Every arm returned `detected` with metadata
 stripped, decoded pixels preserved, and the C2PA outcome ignored. The candidates
 sit at `54.13 dB` and `53.97 dB` with residual RMS near `0.50`, the same

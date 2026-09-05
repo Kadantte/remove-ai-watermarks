@@ -7,27 +7,10 @@ Dependency groups are identical for the CLI and Python API. The default install
 covers metadata extraction, normalization, verdict logic, and stripping.
 Array/pixel APIs use `pixels`; visible removal uses `visible`; DWT-DCT detection
 uses `detect`; pixel photo classification uses `classify`; invisible image removal uses `qwen-zimage` and an NVIDIA GPU; and
-visible video processing uses `video`. Video SynthID removal is a separate VAE
-path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
+visible video processing uses `video`. The video-pixel SynthID-removal profile is
+a separate VAE path that still runs on CPU and combines `video` and `diffusion`. Add `heif`
 independently when path-based pixel APIs must decode HEIC, HEIF, or AVIF. See
 the complete [feature-extra matrix](installation.md#feature-extras).
-
-## Verify OpenAI SynthID
-
-```python
-import remove_ai_watermarks as raiw
-
-result = raiw.verify_openai_synthid("input.png", acknowledge_upload=True)
-print(result.status)
-```
-
-Official OpenAI JSON results expose `signal_family`,
-`provider_scope`, `backend`, `metadata_used_for_verdict`, and
-`pixels_preserved`. Remote transport and response failures raise `OpenAIProvenanceError`. Its
-`status_code`, `error_code`, `request_id`, `retry_after`, and `retryable`
-attributes let a caller implement bounded backoff or a circuit breaker without
-turning an API outage into a false `not_detected` result. One function call still
-performs at most one upload.
 
 ## Remove visible marks
 
@@ -528,8 +511,11 @@ when neither signal is found. This gives callers one predictable output path.
 It does not run lossy invisible regeneration by default.
 
 `include_invisible=True` explicitly adds VAE regeneration for MP4, MOV, or M4V.
-`VideoAllResult.invisible_removed` reports whether the oracle-certified SynthID
-stage ran.
+`VideoAllResult.invisible_removed` remains the compatibility boolean for whether
+the visual regeneration stage ran; it is an action record, not a per-file
+watermark verdict. `visual_invisible_action` exposes the same distinction as
+`not_run` or `regenerated`. `audio.stream_action` is `copied_if_present`, while
+`audio.watermark_status` remains `unverified` because no audio decoder runs.
 
 Process a top-level directory sequentially:
 
@@ -545,7 +531,10 @@ Batch modes are `all`, `visible`, and `metadata`. Successful visible no-ops are
 copied byte-for-byte, keeping the output directory complete. Per-file failures
 are returned in `VideoBatchItem.error`; they do not discard successful outputs.
 The invisible stage is available only as an explicit opt-in in `all` mode and
-reuses one loaded VAE runtime across the batch.
+reuses one loaded VAE runtime across the batch. Each item carries the same
+`audio` status, and `visual_invisible_action` distinguishes regeneration from a
+run that left invisible video pixels untouched. A failed item whose output was
+not published reports `audio.stream_action=not_written`.
 
 ## Inspect and strip video metadata
 
@@ -566,7 +555,9 @@ output is `input_clean.mp4`, leaving the source untouched. An explicit output
 must use the same container extension as the source.
 
 The returned `VideoMetadataResult` records the source, output, metadata detected
-before removal, and any markers remaining after the verified strip. MP4/MOV
+before removal, and any markers remaining after the verified strip. Its `audio`
+field records that source audio is copied if present and not watermark-verified.
+MP4/MOV
 inspection recognizes the native TC260 `AIGC` entry in
 `moov.udta.meta.keys/ilst` and the QuickTime-form `meta` variants Doubao's iOS
 export writes; its removal preserves container size and encoded
@@ -577,7 +568,7 @@ stream-copy remux. AVI inspection reads `LIST/INFO/AIGC`, and FLV inspection
 reads `script.onMetaData.AIGC`; both use the same verified ffmpeg stream-copy
 removal path.
 
-## Remove video SynthID
+## Apply the video-pixel SynthID-removal profile
 
 Install `remove-ai-watermarks[video,diffusion]` before using the video SynthID
 API.
@@ -603,6 +594,9 @@ source metadata, and publishes atomically. The default output is
 The returned `VideoInvisibleResult` includes output geometry, frame rate, frame
 count, paired PSNR, and the motion-compensated temporal-residual ratio. Those
 fields measure fidelity and flicker only. They are not a SynthID detector.
+`visual_invisible_action` is `regenerated`; the nested `audio` status says
+`copied_if_present` and `unverified`. These are action and evidence records, not
+an assertion that every modality is clean.
 The default `noise_std=0.15` is the current full-clip oracle floor; `0.10`
 remained detected on the public eight-second Veo calibration carrier.
 The default profile is oracle-certified. Google does not publish a local
@@ -677,8 +671,10 @@ cuts and disjoint masks keep the independent current fill. Pass
 
 The returned `VideoVisibleResult` records the selected `mark`, the total,
 detected, and removed frame counts, plus any AI metadata that survived the
-output encode. The function returns `output=None` and writes no file when no
-stable mark is selected. Video pixels are transcoded through ffmpeg while the
+output encode. Its `audio` field records `copied_if_present` and `unverified`.
+The function returns `output=None` and writes no file when no
+stable mark is selected; that result records `audio.stream_action=not_written`.
+Video pixels are transcoded through ffmpeg while the
 complete source audio stream is copied. The encoder preserves supported 8-bit
 source chroma sampling, color tags, MP4/MOV track timescale, and relative
 variable-frame timestamps. It also retains a non-zero source start PTS and the

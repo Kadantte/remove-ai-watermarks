@@ -1497,4 +1497,4 @@ task, not a watermark task. Adjacent papers:
 | Wang, Wang, Zhang, Owens, Efros, [arXiv:1912.11035](https://arxiv.org/abs/1912.11035) (CVPR 2020, CNNDetect) | Classifier on ProGAN + JPEG/crop aug transfers to many CNNs | The "one generator is enough" claim. Ojha is the correction once diffusion exists |
 | Wang et al., DIRE, [arXiv:2303.09295](https://arxiv.org/abs/2303.09295) (ICCV 2023) | Reconstruction error under a frozen diffusion model | SDXL float32 at 512. VAE RMS: camera 11.84, photo edit 9.89, s1 9.15, gray stamp 1.24. DDIM DIRE RMS: camera 33.0, s1 31.5, photo 30.9, gray 2.40. Texture rank, not a payload. Float16 DDIM NaN'd on MPS |
 
-They do not substitute for `verify-openai-synthid`.
+They do not substitute for a provider oracle during development.

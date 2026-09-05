@@ -592,8 +592,8 @@ The external variant SynthID-O is available "through partnerships" only. This
 package does not ship a local payload decoder. Research on a periodic lattice
 expert is in [synthid-detector-research.md](synthid-detector-research.md).
 A 2026-08-23 literature map (Gowal, AWPD/FSNet, PRC, reverse-SynthID) is
-in that page's external-literature section. The product routes are signed
-provenance and `verify-openai-synthid`.
+in that page's external-literature section. The runtime product route is signed
+provenance; provider verifiers remain development-only oracles.
 
 ### 3.2 How our tool detects the supported carrier
 
@@ -603,17 +603,17 @@ expert is research-only under `scripts/synthid_runtime/` and
 [synthid-detector-research.md](synthid-detector-research.md). It is not a
 payload decoder and is not called from `identify` or the CLI.
 
-The product routes for SynthID are signed provenance, documented in the next
-sections, and `verify-openai-synthid`.
+The runtime product route for SynthID is signed provenance, documented in the
+next sections. Provider verifiers are used only during development.
 
-### 3.3 Official OpenAI pixel verification
+### 3.3 Development-only OpenAI pixel oracle
 
-`remove-ai-watermarks verify-openai-synthid image.png
---acknowledge-upload` uses OpenAI's official Content Provenance API for the
-OpenAI half of the production detector. This is not the weak local period-8
-research expert and it does not use C2PA as a proxy.
+The internal `openai_provenance` module uses OpenAI's official Content
+Provenance API for bounded development experiments. It is not the weak local
+period-8 research expert, does not use C2PA as a proxy, and is not exposed by
+the installed CLI or top-level Python API.
 
-Before making one request, the command strips AI provenance metadata into a
+Before making one request, the helper strips AI provenance metadata into a
 temporary PNG, JPEG, or WebP file and compares hashes of the decoded RGBA raster
 before and after. It refuses the upload if any AI marker survived, if the format
 or pixels changed, or if the sanitized file exceeds 50 MiB. It then reads
@@ -633,17 +633,18 @@ metadata-stripped, pixel-identical OpenAI images at 1536 by 1024 and 1024 by
 An oracle-positive Google SynthID image and a COCO photograph, sanitized through
 the same path, both returned OpenAI `SynthID not detected` and no Content
 Credentials. This directly validates pixel-only and provider-specific behavior
-for the production design. Four files are only a functional smoke test, not a
+for the development oracle. Four files are only a functional smoke test, not a
 false-positive calibration, and the credentialed SDK endpoint itself was not
 called because no API key was available.
 
-This backend is deliberately excluded from `identify`: verification uploads
-the sanitized raster to OpenAI, the endpoint is not eligible for Zero Data
-Retention, and explicit acknowledgement is required. It is suitable for
-individual supported OpenAI provenance checks, not adaptive detector fitting or
-removal search. The API documentation prohibits repeated queries for watermark
-reverse engineering or evasion. As with every detector in this project,
-`not_detected` is absence of recognized evidence, not proof of human authorship.
+This helper is deliberately excluded from `identify`, the installed CLI, and
+the public Python API: verification uploads the sanitized raster to OpenAI, the
+endpoint is not eligible for Zero Data Retention, and explicit acknowledgement
+is required. It is suitable only for bounded development checks over frozen
+inputs, not adaptive detector fitting or removal search. The API documentation
+prohibits repeated queries for watermark reverse engineering or evasion. As
+with every detector in this project, `not_detected` is absence of recognized
+evidence, not proof of human authorship.
 
 ### 3.4 How our tool recognizes SynthID from provenance
 

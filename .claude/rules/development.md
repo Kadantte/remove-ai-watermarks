@@ -13,6 +13,10 @@ Exit-code and no-signal behavior is a public contract. Read the command-line sec
 
 `tests/test_agent_skill.py` enforces that by comparing the skill's prose against the live Click tree. Guard the SET, not the instances: per-flag comparisons only check what the skill already documents, so `--vendor`, `--pipeline auto` and then the whole `classify` and `verify-openai-synthid` commands each shipped with a green suite. `test_every_cli_command_is_named_somewhere_in_the_skill` closes that; raise `MIN_CLI_VERSION` in the skill's probe whenever a reference names a command, flag or value the previous release lacked, or the probe tells an agent its CLI is current right before it types something that build rejects.
 
+Provider verification services and provenance APIs are development-only oracles. Keep
+their SDKs in the development extra and their adapters out of the installed CLI,
+top-level Python API, and runtime detection/removal pipelines.
+
 Do not add an option whose only outcome is an error. Model id, step count and CFG are fixed by the profile, so none of them is a parameter of the CLI, `InvisibleEngine`, or `WatermarkRemover` -- they were accepted-then-rejected for a while, which moved the failure several frames below the caller and advertised choices the pinned stack cannot honor. If a value cannot vary, delete the knob rather than validating it.
 
 `device` is the deliberate exception and stays a library parameter: `None`/`"auto"` detect, `"cuda"` pins without detecting, and everything else raises at construction. On the image path it is not a CLI option, because the only value a user could usefully type is the one auto-detection already finds. The video SynthID commands (`video invisible`, `video all`, `video batch`) do expose `--device`, whose VAE runs on cuda, mps, or cpu, so a user can usefully pick one. `test_device_exists_exactly_where_the_skill_says_it_does` pins that split; do not read this paragraph as licence to delete the video flag.

@@ -1245,6 +1245,11 @@ def cmd_video_metadata(
     _print_metadata_not_a_clean_verdict()
 
 
+def _print_video_audio_unverified() -> None:
+    """Report the copied-audio boundary without claiming a watermark verdict."""
+    console.print("  Audio watermark: UNVERIFIED; source audio copied unchanged if present")
+
+
 @cmd_video.command("invisible")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_video_output_option
@@ -1259,7 +1264,7 @@ def cmd_video_invisible(
     seed: int,
     device: str,
 ) -> None:
-    """Remove video SynthID with the oracle-certified VAE profile."""
+    """Apply the calibrated SynthID-removal profile to video pixels."""
     from remove_ai_watermarks.video import remove_video_invisible
 
     _banner()
@@ -1282,9 +1287,11 @@ def cmd_video_invisible(
         console.print(f"  FAILED: {len(result.remaining_metadata)} AI metadata marker(s) survived in {result.output}")
         raise SystemExit(1)
     console.print(
-        f"  SynthID removal complete: {result.width}x{result.height}, "
+        "  Video pixels: regenerated with the calibrated SynthID-removal profile "
+        f"(not a per-file verification): {result.width}x{result.height}, "
         f"{result.total_frames} frames at {result.fps:.4g} fps -> {result.output}"
     )
+    _print_video_audio_unverified()
 
 
 @cmd_video.command("visible")
@@ -1327,6 +1334,7 @@ def cmd_video_visible(
         f"  Removed {result.mark} watermark from "
         f"{result.removed_frames}/{result.total_frames} frames -> {result.output}"
     )
+    _print_video_audio_unverified()
 
 
 @cmd_video.command("all")
@@ -1336,7 +1344,7 @@ def cmd_video_visible(
 @click.option(
     "--invisible/--no-invisible",
     default=False,
-    help="Opt into oracle-certified lossy video SynthID removal.",
+    help="Opt into calibrated lossy regeneration of the video pixels.",
 )
 @_video_invisible_options
 def cmd_video_all(
@@ -1390,7 +1398,10 @@ def cmd_video_all(
         )
     console.print(f"  AI metadata: stripped -> {result.output}")
     if result.invisible_removed:
-        console.print("  SynthID: removed with the oracle-certified VAE profile")
+        console.print(
+            "  Video pixels: regenerated with the calibrated SynthID-removal profile (not a per-file verification)"
+        )
+    _print_video_audio_unverified()
 
 
 @cmd_video.command("batch")
@@ -1413,7 +1424,7 @@ def cmd_video_all(
 @click.option(
     "--invisible/--no-invisible",
     default=False,
-    help="Opt into oracle-certified lossy SynthID removal in all mode.",
+    help="Opt into calibrated lossy video-pixel regeneration in all mode.",
 )
 @_video_invisible_options
 def cmd_video_batch(
@@ -1469,55 +1480,11 @@ def cmd_video_batch(
         f"  Batch complete: {result.processed} processed, {result.failed} failed -> {result.output_directory}"
     )
     if result.invisible_removed:
-        console.print(f"  SynthID: removed from {result.invisible_removed} file(s)")
+        console.print(f"  Video pixel regeneration: applied to {result.invisible_removed} file(s)")
+    if result.processed:
+        _print_video_audio_unverified()
     if result.failed:
         raise SystemExit(1)
-
-
-# ── Official OpenAI SynthID verification ──
-@main.command("verify-openai-synthid")
-@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option(
-    "--acknowledge-upload",
-    is_flag=True,
-    help="Confirm upload of a pixel-identical, AI-metadata-stripped copy to OpenAI.",
-)
-@click.option("--json", "as_json", is_flag=True, help="Emit the verifier result as JSON.")
-def cmd_verify_openai_synthid(source: Path, acknowledge_upload: bool, as_json: bool) -> None:
-    """Use OpenAI's official verifier on pixels, independently of C2PA.
-
-    The command strips AI provenance metadata from a temporary copy, proves the
-    decoded pixels are unchanged, and uploads that copy to OpenAI. It reads only
-    the SynthID result. The source file is never modified.
-    """
-    if not acknowledge_upload:
-        raise click.ClickException(
-            "this command uploads a temporary pixel-identical copy to OpenAI; pass --acknowledge-upload to continue"
-        )
-    from remove_ai_watermarks.openai_provenance import verify_openai_synthid
-
-    source = _validate_image(source)
-    try:
-        result = verify_openai_synthid(source, acknowledge_upload=True)
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    if as_json:
-        click.echo(json.dumps(result.to_dict(), indent=2))
-        return
-
-    _banner()
-    console.print(f"\n  OpenAI SynthID pixel watermark: {result.status}")
-    console.print("  Detector: official OpenAI Content Provenance API")
-    if result.model is not None:
-        console.print(f"  Model: {result.model}")
-    if result.generated_at is not None:
-        console.print(f"  Generated at: {result.generated_at}")
-    console.print(
-        "  Input: AI provenance metadata was stripped and decoded pixels were preserved.\n"
-        "  Scope: supported OpenAI SynthID only. A not_detected result is not proof\n"
-        "  that the image is human-created or contains no other watermark."
-    )
 
 
 # ── Provenance identification ──

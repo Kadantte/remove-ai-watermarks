@@ -597,6 +597,8 @@ class TestVideoMetadataApi:
         assert result.output == output
         assert result.detected
         assert result.remaining == {}
+        assert result.audio.stream_action == "copied_if_present"
+        assert result.audio.watermark_status == "unverified"
         assert _VIDEO_PAYLOAD in output.read_bytes()
         assert C2PA_UUID not in output.read_bytes()
 
@@ -1025,6 +1027,9 @@ class TestVideoAllApi:
         assert result.detected_metadata
         assert result.remaining_metadata == {}
         assert result.invisible_removed is False
+        assert result.visual_invisible_action == "not_run"
+        assert result.audio.stream_action == "copied_if_present"
+        assert result.audio.watermark_status == "unverified"
         assert C2PA_UUID not in output.read_bytes()
         assert _VIDEO_PAYLOAD in output.read_bytes()
 
@@ -1116,6 +1121,9 @@ class TestVideoAllApi:
         result = remove_video_all(source, output, include_invisible=True)
 
         assert result.invisible_removed is True
+        assert result.visual_invisible_action == "regenerated"
+        assert result.audio.stream_action == "copied_if_present"
+        assert result.audio.watermark_status == "unverified"
         assert output.exists()
         assert len(intermediate_sources) == 1
         assert not intermediate_sources[0].exists()
@@ -1145,7 +1153,8 @@ class TestVideoAllCli:
 
         assert result.exit_code == 0, result.output
         assert "--invisible" in result.output
-        assert "oracle-certified" in result.output
+        assert "calibrated lossy regeneration" in result.output
+        assert "video pixels" in result.output
 
     def test_reports_locally_verified_result(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from remove_ai_watermarks import video
@@ -1173,9 +1182,9 @@ class TestVideoAllCli:
 
         assert result.exit_code == 0, result.output
         assert "removed sora from 12/12 frames" in result.output
-        assert "UNVERIFIED" not in result.output
+        assert "Audio watermark: UNVERIFIED" in result.output
 
-    def test_reports_oracle_certified_invisible_removal(
+    def test_reports_video_regeneration_and_unverified_audio(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -1204,8 +1213,9 @@ class TestVideoAllCli:
         result = CliRunner().invoke(main, ["video", "all", str(source), "--invisible"])
 
         assert result.exit_code == 0, result.output
-        assert "UNVERIFIED" not in result.output
-        assert "oracle-certified VAE profile" in result.output
+        assert "Video pixels: regenerated with the calibrated SynthID-removal profile" in result.output
+        assert "not a per-file verification" in result.output
+        assert "Audio watermark: UNVERIFIED" in result.output
 
 
 class TestVideoBatchApi:
@@ -1248,7 +1258,9 @@ class TestVideoBatchApi:
         assert (result.output_directory / clean.name).read_bytes() == clean.read_bytes()
         assert result.items[0].source.name == "broken.mp4"
         assert result.items[0].error == "invalid container"
+        assert result.items[0].audio.stream_action == "not_written"
         assert result.items[1].changed is False
+        assert result.items[1].audio.stream_action == "copied_if_present"
 
     def test_metadata_mode_processes_every_supported_video(self, tmp_path: Path):
         from remove_ai_watermarks.video import remove_video_batch
@@ -1399,6 +1411,44 @@ class TestVideoBatchCli:
         assert "FAILED broken.mp4: invalid container" in result.output
         assert "1 failed" in result.output
 
+    def test_reports_visual_regeneration_without_claiming_audio_removal(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from remove_ai_watermarks import video
+        from remove_ai_watermarks.video import VideoBatchItem, VideoBatchResult
+
+        directory = tmp_path / "videos"
+        directory.mkdir()
+        output = tmp_path / "clean"
+        source = directory / "source.mp4"
+        monkeypatch.setattr(
+            video,
+            "remove_video_batch",
+            lambda *_args, **_kwargs: VideoBatchResult(
+                directory=directory,
+                output_directory=output,
+                items=(
+                    VideoBatchItem(
+                        source=source,
+                        output=output / source.name,
+                        mode="all",
+                        changed=True,
+                        visible_mark=None,
+                        invisible_removed=True,
+                    ),
+                ),
+            ),
+        )
+
+        result = CliRunner().invoke(main, ["video", "batch", str(directory), "--invisible"])
+
+        assert result.exit_code == 0, result.output
+        assert "Video pixel regeneration: applied to 1 file(s)" in result.output
+        assert "SynthID: removed" not in result.output
+        assert "Audio watermark: UNVERIFIED" in result.output
+
 
 class TestVideoInvisibleApi:
     def test_removes_synthid_and_strips_metadata(
@@ -1423,6 +1473,9 @@ class TestVideoInvisibleApi:
         assert result.output == output
         assert result.total_frames == 24
         assert result.remaining_metadata == {}
+        assert result.visual_invisible_action == "regenerated"
+        assert result.audio.stream_action == "copied_if_present"
+        assert result.audio.watermark_status == "unverified"
 
     def test_default_output_is_named_as_clean(
         self,
@@ -1461,13 +1514,13 @@ class TestVideoInvisibleApi:
 
 
 class TestVideoInvisibleCli:
-    def test_help_describes_oracle_certification(self):
+    def test_help_describes_calibrated_video_pixel_action(self):
         runner = CliRunner()
 
         result = runner.invoke(main, ["video", "invisible", "--help"])
 
         assert result.exit_code == 0, result.output
-        assert "oracle-certified" in result.output
+        assert "calibrated SynthID-removal profile to video pixels" in result.output
 
     def test_reports_completed_removal(
         self,
@@ -1495,8 +1548,10 @@ class TestVideoInvisibleCli:
         result = runner.invoke(main, ["video", "invisible", str(source), "-o", str(output)])
 
         assert result.exit_code == 0, result.output
-        assert "SynthID removal complete" in result.output
-        assert "UNVERIFIED" not in result.output
+        assert "SynthID removal complete" not in result.output
+        assert "Video pixels: regenerated with the calibrated SynthID-removal profile" in result.output
+        assert "not a per-file verification" in result.output
+        assert "Audio watermark: UNVERIFIED" in result.output
 
 
 class TestSoraFrameLocalization:
@@ -2674,6 +2729,8 @@ class TestVideoVisibleApi:
         assert result.detected_frames == 5
         assert result.removed_frames == 5
         assert result.remaining_metadata == {}
+        assert result.audio.stream_action == "copied_if_present"
+        assert result.audio.watermark_status == "unverified"
 
     def test_no_stable_mark_writes_no_output(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from remove_ai_watermarks import video_visible
@@ -2702,6 +2759,8 @@ class TestVideoVisibleApi:
 
         assert result.output is None
         assert result.removed_frames == 0
+        assert result.audio.stream_action == "not_written"
+        assert result.audio.watermark_status == "unverified"
         assert not output.exists()
 
     def test_dispatches_veo_detector_and_uses_tighter_mask(
@@ -2840,3 +2899,4 @@ class TestVideoVisibleCli:
 
         assert result.exit_code == 0, result.output
         assert "10/12 frames" in result.output
+        assert "Audio watermark: UNVERIFIED" in result.output

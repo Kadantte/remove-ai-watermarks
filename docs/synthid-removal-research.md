@@ -65,8 +65,9 @@ presentation gate, not residual damage. Those rungs are in
 | Add unmarked context (frame, pad, hstack, collage) | 2026-08-19 | Official `not_detected` is a presentation gate. White pad 40% linear stays `detected`; photo fill at the same geometry is `not_detected`. See detector identity/layout |
 | `cebeuq/Synthid-Bypass` diffusion reconstruction | 2026-08-13 | 12 public pairs. Lattice and Gemini Verify go quiet on the *after* images because the image was redrawn, not because a payload was deleted. Faces and text are a quality claim for regeneration, not a local wipe |
 
-Oracle: `verify_openai_synthid` after AI-metadata strip. Seeds s1, s2, s3
-as in [detector research](synthid-detector-research.md). Raw files:
+Development oracle: the internal OpenAI provenance helper after AI-metadata
+strip. Seeds s1, s2, s3 as in
+[detector research](synthid-detector-research.md). Raw files:
 `.local-eval/synthid/prc-oklab-attack-2026-08-15/`.
 
 ## Band that actually carries the mark
@@ -225,7 +226,7 @@ regeneration is already in [synthid.md](synthid.md#23-removal-attacks-and-forens
 | Kassis and Hengartner, [arXiv:2405.08363](https://arxiv.org/abs/2405.08363) (UnMarker, IEEE S&P 2025) | No decoder feedback. Two adversarial spectral optimizations. Breaks even some semantic watermarks (best remaining detection 43%) | Not production SynthID | Spectral disruption without an oracle is the honest analog of our 16-32 scramble, except UnMarker is optimized and we used a one-octave phase shuffle. Goonatilake: UnMarker TPR 98.28% at 0.1% FPR as a *forensic* leftover |
 | Tallam et al., [arXiv:2505.08234](https://arxiv.org/abs/2505.08234) (SemanticRegen) | Partial, label-free regeneration of main objects | Tree-Ring, StegaStamp, StableSig, DWT/DCT. Not SynthID | Partial redraw. Our collage / photo-pad `not_detected` is a presentation gate, not this attack |
 | Cao et al., [arXiv:2608.10166](https://arxiv.org/abs/2608.10166) (MarkNull, USENIX Security 2026) | On-manifold latent decorrelation via a public diffusion proxy. Claims 100% on 20 Imagen-3 Gemini-verify images. PSNR 25.36 dB, SSIM 0.80 | Small Gemini-verify set | Independent evidence that a no-box latent reconstruction can confuse Gemini. Does not meet this project's 40 dB / 0.99 SSIM release gate. Still generation, not a pixel-only wipe |
-| Goonatilake and Ateniese, [arXiv:2605.09203](https://arxiv.org/abs/2605.09203) | Six removers all leave a forensic residue a ResNet-50 sees at >98% TPR @ 1% FPR | Applies to UnMarker, Zhao's WatermarkAttacker, CtrlRegen+ | Defeating `verify-openai-synthid` is not deniability. This is the product remainder |
+| Goonatilake and Ateniese, [arXiv:2605.09203](https://arxiv.org/abs/2605.09203) | Six removers all leave a forensic residue a ResNet-50 sees at >98% TPR @ 1% FPR | Applies to UnMarker, Zhao's WatermarkAttacker, CtrlRegen+ | Defeating a provider oracle is not deniability. This is the product remainder |
 | An et al., [arXiv:2401.08573](https://arxiv.org/abs/2401.08573) (WAVES, ICML 2024) | 26 attacks on StegaStamp, Stable Signature, Tree-Ring. Regeneration, not JPEG, is the attack that matters. StegaStamp TPR@1%FPR 1.00 to 0.01; Tree-Ring 0.99 to 0.12 | Open watermarks | Protocol. Our blur-sigma-7 and 16-32 scramble are closer to WAVES "distortion" than to regeneration |
 | Wen et al., [arXiv:2305.20030](https://arxiv.org/abs/2305.20030) (Tree-Ring) | In-generation Fourier pattern in initial noise | Not SynthID | Kill is DDIM inversion plus latent wipe, not a pixel scramble. Lin and Juarez [arXiv:2506.10502](https://arxiv.org/abs/2506.10502) (USENIX 2025) remove it from public knowledge |
 | Fernandez et al., Stable Signature, ICCV 2023 | Fine-tuned VAE decoder | Not SynthID | Regeneration that replaces the decoder is in-family. Our foreign VAE at 22.3 dB did not kill OpenAI SynthID, which is the expected mismatch |

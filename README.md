@@ -34,7 +34,6 @@ removal.
 | --- | --- | --- |
 | Find provenance signals and watermarks | `identify` | No |
 | Classify a photograph from pixels (opt-in, not provenance) | `classify` | No |
-| Verify supported OpenAI SynthID from pixels with the official remote API | `verify-openai-synthid` | No |
 | Remove known visible AI marks | `visible` | No |
 | Erase a region you select | `erase` | No |
 | Strip AI metadata | `metadata` | No |
@@ -43,7 +42,7 @@ removal.
 | Strip AI metadata from video | `video metadata` | No |
 | Remove a registered visible AI mark from video | `video visible` | No |
 | Process a directory of videos | `video batch` | Depends on mode |
-| Remove video SynthID with the certified VAE profile | `video invisible` | Recommended |
+| Apply the calibrated video-pixel SynthID-removal profile | `video invisible` | Recommended |
 | Regenerate an image to disrupt invisible watermarks | `invisible` | Required (CUDA) |
 | Run visible, invisible, and metadata removal | `all` | Recommended |
 | Process a directory | `batch` | Depends on mode |
@@ -58,7 +57,6 @@ its linked C2PA manifest; metadata stripping alone removes only the manifest.
 | --- | --- |
 | Metadata inspection and stripping | `remove-ai-watermarks` |
 | Photograph AI-versus-camera classification | `remove-ai-watermarks[classify]` |
-| Official remote OpenAI SynthID verification | `remove-ai-watermarks[verify]` |
 | Visible detection and removal | `remove-ai-watermarks[visible]` |
 | Visible video processing | `remove-ai-watermarks[video]` |
 | Video SynthID removal | `remove-ai-watermarks[video,diffusion]` |
@@ -99,19 +97,6 @@ Signed provenance is the supported route for SynthID and `identify` reads it.
 There is no local SynthID pixel detector in the package. Research on a
 periodic lattice expert is in `scripts/synthid_runtime/` and
 [synthid-detector-research.md](docs/synthid-detector-research.md).
-
-For supported OpenAI images, the optional official verifier provides a pixel
-watermark verdict:
-
-```bash
-uv tool install --force "remove-ai-watermarks[verify]"
-remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload
-```
-
-The command removes AI provenance metadata from a temporary copy, verifies that
-the decoded pixels are unchanged, uploads only that copy to OpenAI, and consumes
-only the independent SynthID response. It never runs implicitly from `identify`.
-An API key, endpoint access, and explicit upload acknowledgement are required.
 
 For visible watermark removal, install the pixel dependencies:
 
@@ -209,7 +194,7 @@ atomically. No output is written when no stable mark is found.
 HDR, PQ/HLG, and greater-than-8-bit inputs are rejected before encoding rather
 than silently reduced through OpenCV's 8-bit BGR boundary.
 
-Remove video SynthID:
+Apply the calibrated video-pixel SynthID-removal profile:
 
 ```bash
 uv tool install --force "remove-ai-watermarks[video,diffusion]"
@@ -222,7 +207,9 @@ completed encode atomically. The default `noise_std=0.15` profile passed both
 the two-carrier calibration and a complete public eight-second Veo oracle
 check. Google does not publish a local decoder, so a fresh provider check
 remains useful for unusually important files or after provider changes, but it
-is not a product result state.
+is not a product result state. The CLI therefore describes video-pixel
+regeneration instead of claiming a per-file SynthID verdict, and reports the
+copied audio watermark as `UNVERIFIED`.
 
 For invisible watermark removal, install the `qwen-zimage` extra. **An NVIDIA GPU
 is required**: all profiles are CUDA-only, and there is no CPU or MPS fallback.
@@ -412,15 +399,14 @@ images = raiw.remove_batch("images", "images_clean", mode="visible")
 for item in images.items:
     print(item.source, item.visible_status, item.visible_marks)
 
-openai_synthid = raiw.verify_openai_synthid("image.png", acknowledge_upload=True)
-print(openai_synthid.status)
-
 provenance = raiw.identify_video("input.mp4")
 report = raiw.inspect_video_metadata("input.mp4")
 complete = raiw.remove_video_all("input.mp4", "clean.mp4")
+print(complete.visual_invisible_action, complete.audio.watermark_status)
 batch = raiw.remove_video_batch("videos", "videos_clean")
 cleaned = raiw.remove_video_metadata("input.mp4")
 synthid_cleaned = raiw.remove_video_invisible("input.mp4", "synthid_clean.mp4")
+print(synthid_cleaned.visual_invisible_action, synthid_cleaned.audio.watermark_status)
 visible = raiw.remove_video_visible("input.mp4", "clean.mp4")
 print(visible.mark)
 veo = raiw.remove_video_visible("veo.mp4", "veo_clean.mp4", mark="veo")

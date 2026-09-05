@@ -8,7 +8,7 @@ The visible pixel path reuses the image package's shared fill backends.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Literal
@@ -57,13 +57,22 @@ class VideoMetadataReport:
 
 
 @dataclass(frozen=True)
+class VideoAudioStatus:
+    """Audio disposition for a video output without an audio watermark check."""
+
+    stream_action: Literal["copied_if_present", "not_written"] = "copied_if_present"
+    watermark_status: Literal["unverified"] = "unverified"
+
+
+@dataclass(frozen=True)
 class VideoMetadataResult:
-    """Result of a verified video metadata-removal operation."""
+    """Result of a verified metadata strip that preserves source audio."""
 
     source: Path
     output: Path
     detected: dict[str, str]
     remaining: dict[str, str]
+    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
 
 
 @dataclass(frozen=True)
@@ -84,7 +93,7 @@ class VideoProvenanceReport:
 
 @dataclass(frozen=True)
 class VideoVisibleResult:
-    """Result of visible AI-watermark removal from a video."""
+    """Result of visible AI-watermark removal with unverified copied audio."""
 
     source: Path
     output: Path | None
@@ -93,17 +102,28 @@ class VideoVisibleResult:
     detected_frames: int
     removed_frames: int
     remaining_metadata: dict[str, str]
+    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
+
+    def __post_init__(self) -> None:
+        if self.output is None:
+            object.__setattr__(self, "audio", VideoAudioStatus(stream_action="not_written"))
 
 
 @dataclass(frozen=True)
 class VideoInvisibleResult:
-    """Result of removing video SynthID through the oracle-certified VAE profile."""
+    """Result of applying the calibrated VAE profile to video pixels only."""
 
     source: Path
     output: Path
     noise_std: float
     metrics: RegenerationMetrics
     remaining_metadata: dict[str, str]
+    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
+
+    @property
+    def visual_invisible_action(self) -> Literal["regenerated"]:
+        """Describe the pixel action without claiming a per-file watermark verdict."""
+        return "regenerated"
 
     @property
     def total_frames(self) -> int:
@@ -132,7 +152,7 @@ class VideoInvisibleResult:
 
 @dataclass(frozen=True)
 class VideoAllResult:
-    """Result of the complete video-cleaning pipeline."""
+    """Result of visible, metadata, and optional video-pixel processing."""
 
     source: Path
     output: Path
@@ -143,11 +163,17 @@ class VideoAllResult:
     detected_metadata: dict[str, str]
     remaining_metadata: dict[str, str]
     invisible_removed: bool
+    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
+
+    @property
+    def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
+        """Describe whether the opt-in visual regeneration stage ran."""
+        return "regenerated" if self.invisible_removed else "not_run"
 
 
 @dataclass(frozen=True)
 class VideoBatchItem:
-    """Outcome for one source in a video batch."""
+    """Outcome for one source in a video batch, including the audio boundary."""
 
     source: Path
     output: Path | None
@@ -156,6 +182,16 @@ class VideoBatchItem:
     visible_mark: str | None
     invisible_removed: bool
     error: str | None = None
+    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
+
+    def __post_init__(self) -> None:
+        if self.output is None:
+            object.__setattr__(self, "audio", VideoAudioStatus(stream_action="not_written"))
+
+    @property
+    def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
+        """Describe whether visual regeneration ran for this item."""
+        return "regenerated" if self.invisible_removed else "not_run"
 
 
 @dataclass(frozen=True)
@@ -507,7 +543,7 @@ def remove_video_all(
     device: str = "auto",
     _invisible_runtime: VideoVaeRuntime | None = None,
 ) -> VideoAllResult:
-    """Run the complete video cleaning pipeline.
+    """Run visible, metadata, and optional video-pixel processing.
 
     The default path removes a stable visible provider mark when present and
     always strips verified AI metadata. It writes a same-container passthrough
@@ -760,11 +796,12 @@ def remove_video_invisible(
     device: str = "auto",
     _runtime: VideoVaeRuntime | None = None,
 ) -> VideoInvisibleResult:
-    """Remove video SynthID through the oracle-certified VAE profile.
+    """Regenerate video pixels through the calibrated SynthID-removal profile.
 
     The function also strips source metadata during the transcode. The default
-    profile is provider-oracle certified; important outputs may still be
-    rechecked with Google's verifier when the caller needs a per-file verdict.
+    profile was calibrated against a provider oracle, but this call performs no
+    per-file verification. Source audio is copied if present and its watermark
+    status remains unverified.
     """
     from remove_ai_watermarks.metadata import get_ai_metadata
 

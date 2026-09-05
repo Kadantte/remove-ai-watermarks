@@ -134,8 +134,8 @@ rates are kept in
 Google does not publish the proprietary SynthID payload decoder, and the
 package does not ship one. Signed provenance is the supported route:
 Google AI C2PA or current OpenAI C2PA with an explicit watermark action.
-`verify-openai-synthid` is the official remote pixel check for OpenAI.
-Research on a periodic lattice expert is in
+Provider verifiers and provenance APIs are development-only oracles, not
+user-facing runtime features. Research on a periodic lattice expert is in
 [synthid-detector-research.md](synthid-detector-research.md).
 
 For important outputs:
@@ -192,7 +192,7 @@ are tracked in `data/evaluations/video-synthid-oracle.csv`.
 `remove_video_invisible` regenerates the video stream and copies the source audio
 verbatim: the extracted audio bitstream of input and output has an identical
 sha256, measured on two carriers. It also strips every metadata marker, so the
-output can report clean from `get_ai_metadata` and `identify_video` while carrying
+output can have no locally supported metadata or visible signal while carrying
 an untouched generated audio track. Google's verifier scores audio and visual
 tracks separately, and a track this path never modifies is a track it cannot have
 cleaned.
@@ -201,6 +201,11 @@ Whether a given carrier's audio actually holds a mark the verifier reads has not
 been established -- that needs a provider verdict, which has not been obtained.
 Treat a clean local report on a clip with generated audio as unproven, not as a
 guarantee, and check the audio separately when it matters.
+
+The public video results make that boundary explicit without decoding audio:
+`visual_invisible_action` records whether video pixels were regenerated, while
+the nested audio status reports `copied_if_present` and `unverified`. CLI output
+uses the same terms. These fields add no media pass or model inference.
 
 The shipped engine streams sampled frames in bounded batches, computes its
 fidelity metrics incrementally, and pipes regenerated pixels directly to

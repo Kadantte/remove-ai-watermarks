@@ -167,13 +167,9 @@ under Google's all-media watermark policy, and current OpenAI C2PA carrying an
 explicit `c2pa.watermarked.*` action. Legacy OpenAI C2PA without that action
 does not assert SynthID.
 
-The optional `verify-openai-synthid` command is a separate official remote
-verifier for supported OpenAI watermarks. It strips AI provenance metadata from
-a temporary PNG, JPEG, or WebP copy, proves that decoded RGBA pixels are
-unchanged, and uses only the API's SynthID result. It is therefore independent
-of C2PA for its decision, but it is not local: the sanitized raster is uploaded
-to OpenAI after explicit acknowledgement. It is intentionally excluded from
-`identify` and its negative result remains inconclusive.
+Provider verifiers and provenance APIs are reserved for development-time
+calibration. They are not exposed through the installed CLI, the top-level
+Python API, or `identify`; production reports only locally available evidence.
 
 Microsoft Paint can name `com.microsoft.invismark.1` in a C2PA soft-binding
 assertion. Inspection reports both that exact algorithm and its signed `value`,

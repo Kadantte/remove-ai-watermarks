@@ -40,9 +40,10 @@ rejects `addWatermark` (`Cannot find field`). Current Gemini API docs
 state that all generated images include a SynthID watermark. There is no
 encoder-off Google path.
 
-What the product uses for the *watermark* is signed provenance and
-`verify-openai-synthid`. The periodic-lattice expert is research-only under
-`scripts/synthid_runtime/` and is not called from `identify` or the CLI.
+What the runtime product uses for the *watermark* is signed provenance. The
+official OpenAI verifier and the periodic-lattice expert are development-only;
+the latter lives under `scripts/synthid_runtime/` and is not called from
+`identify` or the CLI.
 Lineage measurements of that expert are in
 [SynthID source classifiers](synthid-classifiers.md).
 
@@ -433,7 +434,7 @@ Battery 2026-08-23, no official oracle. Local numbers:
 `.local-eval/synthid/prc-oklab-attack-2026-08-15/wild-hypotheses-2026-08-23.json`.
 Prepared attack rasters wait in `wild-attacks-2026-08-23/` for a later
 verifier window. Jacobian / adaptive queries against
-`verify-openai-synthid` stay out: the endpoint forbids reverse-engineering.
+the OpenAI provenance oracle stay out: the endpoint forbids reverse-engineering.
 
 ### Tested locally, not a mark
 
@@ -585,7 +586,7 @@ forward-temporal AUC 0.53 vs L1 `not_detected`, 0.95 vs COCO, 0.97 vs COCO
 after a 2 px crop. The student learns OpenAI-versus-photo and still does
 not see the oracle mark contrast.
 
-## Product remainder for the watermark
+## Runtime product remainder for the watermark
 
-Signed provenance (`identify`) and `verify-openai-synthid` (remote, explicit
-upload). A research lattice miss is not a clean SynthID negative.
+Signed provenance (`identify`). The remote OpenAI oracle is development-only,
+and a research lattice miss is not a clean SynthID negative.
