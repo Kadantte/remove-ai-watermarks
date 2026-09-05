@@ -24,9 +24,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import cv2
-import numpy as np
-
 from remove_ai_watermarks import _text_mark_engine, image_io
 from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
 
@@ -159,21 +156,11 @@ class DoubaoEngine(TextMarkEngine):
         if alpha is None:
             return super().footprint_mask(image, force=False, dilate=dilate, detection=det)
 
-        loc = self.locate(image)
-        x0, y0, x1, y1 = det.match_box  # inclusive ROI-local coordinates
-        x0, y0 = max(0, x0), max(0, y0)
-        x1, y1 = min(loc.w - 1, x1), min(loc.h - 1, y1)
-        if x1 < x0 or y1 < y0:
-            return None
-        glyph_w, glyph_h = x1 - x0 + 1, y1 - y0 + 1
-        aligned = cv2.resize(alpha, (glyph_w, glyph_h), interpolation=cv2.INTER_LINEAR)
-
-        local_mask = np.zeros((loc.h, loc.w), np.uint8)
-        local_mask[y0 : y0 + glyph_h, x0 : x0 + glyph_w] = (aligned > _FOOTPRINT_ALPHA_FLOOR).astype(np.uint8) * 255
         radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
-        if radius > 0:
-            kernel = np.ones((2 * radius + 1, 2 * radius + 1), np.uint8)
-            local_mask = cv2.dilate(local_mask, kernel)
-        mask = np.zeros(image.shape[:2], np.uint8)
-        mask[loc.y : loc.y + loc.h, loc.x : loc.x + loc.w] = local_mask
-        return mask
+        return self._aligned_alpha_mask(
+            image,
+            det,
+            alpha,
+            alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
+            dilate=radius,
+        )

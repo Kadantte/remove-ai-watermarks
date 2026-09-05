@@ -54,7 +54,7 @@ CORPUS = REPO / ".local-eval" / "originals"
 OUT = REPO / ".local-eval" / "fill-quality.jsonl"
 
 # Text marks: a bundled alpha PNG plus the engine's own corner geometry.
-STAMPABLE = ("doubao", "jimeng", "samsung")
+STAMPABLE = ("doubao", "jimeng", "kling", "samsung")
 # Marks with no bundled alpha asset. Both expose a default footprint via
 # `footprint_mask(force=True)`, so they are stamped by fitting their own alpha source
 # into that slot: Gemini's alpha is derived from its background captures, the pill's

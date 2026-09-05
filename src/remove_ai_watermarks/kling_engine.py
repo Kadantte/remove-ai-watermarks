@@ -7,13 +7,13 @@ Known variants: an "Omni" suffix release, a latin "KlingAI 3.0" release, and a
 version-less "可灵AI" -- the silhouette targets the common "可灵AI 3.0" core, so the
 suffix variants are only caught when the core run is bold enough (measured below).
 
-Detection matches the bundled glyph silhouette against the corner; removal is the
-shared **localize -> fill** (the glyph-bbox :meth:`footprint_mask` feeds
-``region_eraser``), NOT reverse-alpha. This module supplies only Kling AI's tuned
-:class:`TextMarkConfig` (``assets/kling_alpha.png`` -- a font-rendered synthetic
-silhouette from ``scripts/render_vendor_silhouettes.py``, never cut from an
-upload). It also feeds ``identify`` as the medium-confidence ``visible_kling``
-signal via the registry.
+Detection matches the bundled glyph silhouette against the corner. Removal unions
+the pixel-derived footprint with that silhouette aligned to the winning match box,
+then sends the hybrid mask through the shared **localize -> fill** path in
+``region_eraser``; it is not reverse-alpha. The asset
+(``assets/kling_alpha.png``) is a font-rendered synthetic silhouette from
+``scripts/render_vendor_silhouettes.py``, never cut from an upload. The detector also
+feeds ``identify`` as the medium-confidence ``visible_kling`` signal via the registry.
 
 EVERY tuned number below was measured on the vendor cohort (30 TC260 carriers whose
 producer USCC 91110108335469089C names the entity, 2026-07-21; harness
@@ -51,8 +51,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import cv2
+
 from remove_ai_watermarks import _text_mark_engine
-from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkEngine
+from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -85,6 +87,13 @@ DETECT_NCC_THRESHOLD = 0.35
 # cohort: the mark's width (0.12, unimodal) and the silhouette aspect (0.239).
 _ALPHA_WIDTH_FRAC = 0.12
 _ALPHA_HEIGHT_FRAC = 0.0287
+
+# A faint Kling overlay can yield a partial thresholded blob even though the
+# continuous detector aligned the complete text core. Keep that pixel-derived mask
+# for release-specific strokes, then add the aligned synthetic core with a one-pixel
+# halo so every glyph that justified the detection is removed on the first fill.
+_FOOTPRINT_ALPHA_FLOOR = 0.05
+_FOOTPRINT_DILATE = 1
 
 _CONFIG = TextMarkConfig(
     name="Kling AI",
@@ -128,3 +137,39 @@ class KlingEngine(TextMarkEngine):
 
     def __init__(self) -> None:
         super().__init__(_CONFIG)
+
+    def footprint_mask(
+        self,
+        image: NDArray[Any] | None,
+        *,
+        force: bool = False,
+        dilate: int | None = None,
+        detection: TextMarkDetection | None = None,
+    ) -> NDArray[Any] | None:
+        """Add the detector-aligned Kling core to the pixel-derived footprint.
+
+        The legacy mask remains in the union because it can cover variant-specific
+        strokes outside the synthetic core. The aligned alpha closes holes caused by
+        a faint top-hat blob without replacing that evidence or triggering another
+        detector pass. Explicit ``force`` has no trustworthy alignment and retains the
+        shared geometry-box behavior.
+        """
+        if force or image is None or image.size == 0:
+            return super().footprint_mask(image, force=force, dilate=dilate, detection=detection)
+
+        det = detection if detection is not None else self.detect(image)
+        legacy = super().footprint_mask(image, force=False, dilate=dilate, detection=det)
+        alpha = _alpha_template()
+        if alpha is None:
+            return legacy
+        radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
+        core = self._aligned_alpha_mask(
+            image,
+            det,
+            alpha,
+            alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
+            dilate=radius,
+        )
+        if core is None:
+            return legacy
+        return core if legacy is None else cv2.bitwise_or(legacy, core)

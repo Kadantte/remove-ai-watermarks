@@ -793,6 +793,44 @@ class TextMarkEngine:
             return None
         return self._extend_match_box(det.match_box, loc, image.shape[:2])
 
+    def _aligned_alpha_mask(
+        self,
+        image: NDArray[Any],
+        detection: TextMarkDetection,
+        alpha: NDArray[Any],
+        *,
+        alpha_floor: float,
+        dilate: int,
+    ) -> NDArray[Any] | None:
+        """Place an alpha footprint on the detector's winning template box.
+
+        Continuous front ends locate faint glyphs that the thresholded pixel response
+        can only partly recover. The winning match already fixes the template's position
+        and scale, so engines with a trustworthy alpha asset can reuse that alignment
+        for their removal mask instead of running another search.
+        """
+        if not detection.detected or detection.match_box is None:
+            return None
+        source = image_io.to_bgr(image)
+        loc = self.locate(source)
+        x0, y0, x1, y1 = detection.match_box  # inclusive ROI-local coordinates
+        x0, y0 = max(0, x0), max(0, y0)
+        x1, y1 = min(loc.w - 1, x1), min(loc.h - 1, y1)
+        if x1 < x0 or y1 < y0:
+            return None
+
+        glyph_w, glyph_h = x1 - x0 + 1, y1 - y0 + 1
+        aligned = cv2.resize(alpha, (glyph_w, glyph_h), interpolation=cv2.INTER_LINEAR)
+        local_mask = np.zeros((loc.h, loc.w), np.uint8)
+        local_mask[y0 : y0 + glyph_h, x0 : x0 + glyph_w] = (aligned > alpha_floor).astype(np.uint8) * 255
+        if dilate > 0:
+            kernel = np.ones((2 * dilate + 1, 2 * dilate + 1), np.uint8)
+            local_mask = cv2.dilate(local_mask, kernel)
+
+        mask = np.zeros(source.shape[:2], np.uint8)
+        mask[loc.y : loc.y + loc.h, loc.x : loc.x + loc.w] = local_mask
+        return mask
+
     def footprint_mask(
         self,
         image: NDArray[Any] | None,

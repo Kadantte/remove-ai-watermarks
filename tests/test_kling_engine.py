@@ -8,6 +8,8 @@ geometry or relax the measured strict-only gate.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
@@ -135,6 +137,20 @@ class TestFootprintMaskAndRemoval:
         assert not KlingEngine().detect(out).detected
         h, w = wm.shape[:2]
         assert np.array_equal(out[: h // 2, : w // 2], wm[: h // 2, : w // 2])  # far region exact
+
+    def test_removes_complete_faint_canonical_mark(self):
+        """A partial top-hat blob must not truncate the detector's full match."""
+        path = Path(__file__).parents[1] / "data" / "fixtures" / "visible" / "kling" / "example.png"
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        assert image is not None
+
+        mark = registry.get_mark("kling")
+        before = mark.detect(image)
+        assert before.detected
+        output, region = mark.remove(image, backend="cv2", detection=before)
+
+        assert region is not None
+        assert not KlingEngine().detect(output).detected
 
     def test_footprint_mask_in_bottom_right(self):
         wm, _ = _compose(853, 640)

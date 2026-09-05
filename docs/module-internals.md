@@ -1279,15 +1279,15 @@ belongs in the `_post_gate` hook, never in a `detect` override: an override is
 invisible to the single-pass path, and the RunningHub and Yuanbao anchor gates
 were briefly skipped there for exactly that reason.
 
-A mark whose removable footprint differs from what the detector localizes
+A mark whose removable rectangular footprint differs from what the detector localizes
 overrides `_footprint_rect` (which policy) and `_extend_match_box` (how far the
 box grows), not the whole `footprint_mask`. Baidu extends right to the corner tag
 and LiblibAI extends left to the triangle logo; both inherit every guard around
 that arithmetic.
 
-Doubao is the deliberate exception because its captured alpha supplies more
-information than a rectangle. Its continuous top-hat response locates the mark,
-then `DoubaoEngine.footprint_mask` resizes the alpha to that same winning
+Doubao and Kling are deliberate sparse-mask exceptions because their alpha assets
+supply more information than a rectangle. Doubao's continuous top-hat response
+locates the mark, then `DoubaoEngine.footprint_mask` resizes the alpha to that same winning
 `match_box` and masks only the glyphs. The canonical 2048-pixel fixture has bright
 branch texture behind the bottom-edge wordmark; bounding the thresholded response,
 padding it, and dilating it produced a solid 404-by-134 mask clamped to the bottom
@@ -1295,6 +1295,18 @@ and right edges. OpenCV then had no context beyond either edge and filled the ho
 with large triangular wedges. The aligned sparse mask keeps both frame edges
 untouched and still clears the detector. `force` cannot align a missing detection,
 so it retains the shared geometry-box fallback.
+
+Kling keeps the pixel-derived footprint for release-specific strokes, then unions
+it with the synthetic alpha aligned to the detector's winning match box. This is
+necessary because its faint canonical overlay produced a blob covering only the
+left half of `可灵AI 3.0`, leaving `3.0` after fill. On 60 constructed pairs from 20
+tracked source images crossed with the three detector scales, the hybrid covered
+100% of the known stamped footprint and cleared 60/60, versus 29/60 for the blob
+alone. In the same paired region the hybrid improved median PSNR by 6.59 dB and
+median SSIM by 0.062; both moved in the favorable direction on 52 pairs, tied on
+seven, and regressed on one. The union is deliberate: replacing the old footprint
+with the synthetic core alone would overfit the font render and could discard a
+real variant stroke the pixel mask already found.
 
 Yuanbao uses the polarity-independent `contrast` front end because its standard
 two-line mark can be light on dark scenes or dark on light scenes. Its detector
