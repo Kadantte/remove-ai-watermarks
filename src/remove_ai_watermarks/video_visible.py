@@ -803,7 +803,7 @@ def detect_kling_frame(
         and logo_x is not None
     ):
         font_x, _, font_width, _ = font_candidate.region
-        if logo_x <= font_x + round(font_width * 0.50):
+        if font_x - round(font_width * 0.08) <= logo_x <= font_x + round(font_width * 0.50):
             best = logo_candidate
     if best is None or best.region is None:
         return FrameLocalization(frame_index, 0.0, None)

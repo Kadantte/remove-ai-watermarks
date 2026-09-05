@@ -1745,6 +1745,27 @@ class TestAdditionalProviderFrameLocalization:
         assert detection.confidence == 0.0
         assert detection.region is None
 
+    def test_ignores_a_logo_candidate_left_of_the_wordmark(self, monkeypatch: pytest.MonkeyPatch):
+        from remove_ai_watermarks import video_visible
+        from remove_ai_watermarks.video_visible import FrameLocalization, detect_kling_frame
+
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        frame[670:706, 1120:1280] = 255
+
+        def fixed_mark(_frame, template_key, *, frame_index, **_kwargs):
+            if template_key == "kling-3":
+                return FrameLocalization(frame_index, 0.63, (1156, 678, 60, 20))
+            if template_key == "kling-logo":
+                return FrameLocalization(frame_index, 0.55, (900, 680, 20, 20))
+            return FrameLocalization(frame_index, 0.0, None)
+
+        monkeypatch.setattr(video_visible, "_detect_fixed_mark", fixed_mark)
+
+        detection = detect_kling_frame(frame)
+
+        assert detection.region == (1120, 670, 160, 36)
+        assert detection.confidence == 0.63
+
 
 class TestSoraTemporalArbiter:
     _BOX = (40, 60, 150, 54)
