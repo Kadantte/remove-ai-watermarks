@@ -47,9 +47,17 @@ Do these in order after the skill is on the default branch.
    people run `npx skills add`. The README install line is the seed, not a
    registration.
 4. **Awesome-list PRs.** Hand-curated GitHub lists are how people browse skills
-   today. One accurate PR per list, with the scope sentence intact. Candidates:
-   `ComposioHQ/awesome-claude-skills`, `VoltAgent/awesome-agent-skills`,
-   `VoltAgent/awesome-openclaw-skills`.
+   today. One accurate PR per list, with the scope sentence intact.
+   - `ComposioHQ/awesome-claude-skills`: submitted 2026-09-05 as PR 1841
+     (Creative & Media); no maturity bar in its contribution rules.
+   - `VoltAgent/awesome-agent-skills`: DEFERRED. Its CONTRIBUTING rejects
+     brand-new skills ("give your skill time to mature and gain users before
+     submitting"). Re-attempt after the skill has real installs and a
+     release that ships it (0.38.0+).
+   - `VoltAgent/awesome-openclaw-skills`: DEFERRED. Entries are indexed via
+     clawskills.sh, so the skill must be published to ClawHub first, and the
+     list asks contributors not to submit skills "created 3 hours ago".
+     Re-attempt after the ClawHub publish plus visible adoption.
 5. **Claude community marketplace.** Form at
    [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)
    (individuals) or the claude.ai directory form (Team/Enterprise). Validate
