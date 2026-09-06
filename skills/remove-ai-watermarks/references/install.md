@@ -63,6 +63,7 @@ ffmpeg is missing, or the user asked about Homebrew, pipx, or pip.
 | Video SynthID (`video invisible`) | `video,diffusion`, plus ffmpeg |
 | Invisible images | `qwen-zimage`, plus NVIDIA CUDA |
 | Learned image/video fill | add `migan` or `lama` |
+| Verified text restoration (`--text-manifest`) | add `text-restoration` |
 | Open DWT-DCT detect | add `detect` |
 | Pixel classifier (`classify`) | add `classify` |
 | OpenAI verifier (`verify-openai-synthid`) | add `verify` |
