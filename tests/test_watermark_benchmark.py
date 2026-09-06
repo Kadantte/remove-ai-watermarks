@@ -193,11 +193,13 @@ def test_evaluation_keeps_detection_removal_and_fidelity_separate(tmp_path: Path
     )
     case = MODULE.load_manifest(manifest)[0]
     adapter = _FakeAdapter(status="not_detected", label=None)
+    times = iter((100, 500))
 
     record = MODULE.evaluate_case(
         case,
         adapters={"fake": adapter},
         repository={"commit": "abc123", "dirty": False},
+        clock_ns=lambda: next(times),
     )
 
     assert adapter.calls == [removed.resolve()]
@@ -208,6 +210,7 @@ def test_evaluation_keeps_detection_removal_and_fidelity_separate(tmp_path: Path
         "expected": "not_detected",
         "matches_expected": True,
         "positive_evidence": False,
+        "adapter_elapsed_ms": 0.0004,
     }
     assert record["removal"] == {
         "attempted": True,
@@ -272,6 +275,7 @@ def test_unavailable_adapter_is_not_reported_as_negative(tmp_path: Path) -> None
 
     assert record["detection"]["status"] == "unavailable"
     assert record["detection"]["matches_expected"] is None
+    assert record["detection"]["adapter_elapsed_ms"] is None
     assert adapter.calls == []
 
 
@@ -290,6 +294,7 @@ def test_undecodable_artifact_is_error_not_negative(tmp_path: Path) -> None:
     assert record["detection"]["status"] == "error"
     assert record["detection"]["matches_expected"] is None
     assert record["detection"]["error"] == "artifact could not be decoded"
+    assert record["detection"]["adapter_elapsed_ms"] is None
     assert adapter.calls == []
 
 

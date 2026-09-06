@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
         "visible_sheets.py",
         "registered_mark_calibrate.py",
         "watermark_benchmark.py",
+        "watermark_benchmark_cohort.py",
+        "watermark_benchmark_report.py",
     ],
 )
 def test_script_help_exits_cleanly(script: str) -> None:

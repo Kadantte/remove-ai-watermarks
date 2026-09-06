@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections import Counter
 from dataclasses import dataclass
 from functools import cache, lru_cache
@@ -59,6 +60,7 @@ DetectorStatus = Literal["detected", "not_detected", "unavailable", "error"]
 _ARMS: tuple[Arm, ...] = ("positive", "matched_negative", "wrong_key", "hard_negative")
 _STATES: tuple[State, ...] = ("clean", "marked", "attacked", "removed")
 _EXPECTED: tuple[ExpectedDetection, ...] = ("detected", "not_detected", "unresolved")
+DETECTOR_STATUSES: tuple[DetectorStatus, ...] = ("detected", "not_detected", "unavailable", "error")
 _FIELDS = {
     "schema_version",
     "case_id",
@@ -146,7 +148,8 @@ class FunctionAdapter:
         return DetectorOutcome(status="detected" if label is not None else "not_detected", label=label)
 
 
-def _sha256(path: Path) -> str:
+def sha256_file(path: Path) -> str:
+    """Return the lowercase SHA-256 digest of one file."""
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -156,7 +159,7 @@ def _sha256(path: Path) -> str:
 
 @cache
 def _code_sha256(path: Path) -> str:
-    return _sha256(path)
+    return sha256_file(path)
 
 
 def _reject_json_constant(value: str) -> None:
@@ -172,14 +175,25 @@ def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _nonempty_string(value: object, *, field: str, location: str) -> str:
+def parse_strict_json(value: str) -> object:
+    """Parse JSON while rejecting duplicate fields and non-finite numbers."""
+    return json.loads(
+        value,
+        object_pairs_hook=_unique_json_object,
+        parse_constant=_reject_json_constant,
+    )
+
+
+def require_nonempty_string(value: object, *, field: str, location: str) -> str:
+    """Return a validated non-empty string or raise with its source location."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{location}: {field} must be a non-empty string")
     return value
 
 
-def _digest(value: object, *, field: str, location: str) -> str:
-    digest = _nonempty_string(value, field=field, location=location)
+def require_sha256(value: object, *, field: str, location: str) -> str:
+    """Return a validated lowercase SHA-256 digest."""
+    digest = require_nonempty_string(value, field=field, location=location)
     if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
         raise ValueError(f"{location}: {field} must be a lowercase sha256")
     return digest
@@ -194,8 +208,8 @@ def _artifact(
     location: str,
     digest_cache: dict[Path, str],
 ) -> tuple[Path, str]:
-    raw_path = _nonempty_string(path_value, field=f"{prefix}path", location=location)
-    expected_digest = _digest(digest_value, field=f"{prefix}sha256", location=location)
+    raw_path = require_nonempty_string(path_value, field=f"{prefix}path", location=location)
+    expected_digest = require_sha256(digest_value, field=f"{prefix}sha256", location=location)
     path = Path(raw_path)
     if not path.is_absolute():
         path = manifest.parent / path
@@ -204,7 +218,7 @@ def _artifact(
         raise ValueError(f"{location}: {prefix}path is not a file: {path}")
     actual_digest = digest_cache.get(path)
     if actual_digest is None:
-        actual_digest = _sha256(path)
+        actual_digest = sha256_file(path)
         digest_cache[path] = actual_digest
     if actual_digest != expected_digest:
         raise ValueError(
@@ -219,8 +233,8 @@ def _transform(value: object, *, location: str) -> Transform:
     transform = cast("dict[str, object]", value)
     if set(transform) != _TRANSFORM_FIELDS:
         raise ValueError(f"{location}: transform must contain exactly name, revision, and parameters")
-    name = _nonempty_string(transform["name"], field="transform.name", location=location)
-    revision = _nonempty_string(transform["revision"], field="transform.revision", location=location)
+    name = require_nonempty_string(transform["name"], field="transform.name", location=location)
+    revision = require_nonempty_string(transform["revision"], field="transform.revision", location=location)
     parameters = transform["parameters"]
     if not isinstance(parameters, dict):
         raise ValueError(f"{location}: transform.parameters must be an object")
@@ -290,17 +304,17 @@ def _case(
         )
 
     return BenchmarkCase(
-        case_id=_nonempty_string(values["case_id"], field="case_id", location=location),
-        pair_id=_nonempty_string(values["pair_id"], field="pair_id", location=location),
+        case_id=require_nonempty_string(values["case_id"], field="case_id", location=location),
+        pair_id=require_nonempty_string(values["pair_id"], field="pair_id", location=location),
         media_type="image",
-        adapter=_nonempty_string(values["adapter"], field="adapter", location=location),
+        adapter=require_nonempty_string(values["adapter"], field="adapter", location=location),
         arm=arm,
         state=state,
         path=path,
         sha256=sha256,
         reference_path=reference_path,
         reference_sha256=reference_sha256,
-        source_revision=_nonempty_string(values["source_revision"], field="source_revision", location=location),
+        source_revision=require_nonempty_string(values["source_revision"], field="source_revision", location=location),
         transform=_transform(values["transform"], location=location),
         seed=seed,
         expected=expected,
@@ -317,11 +331,7 @@ def load_manifest(path: Path) -> list[BenchmarkCase]:
             if not line.strip():
                 continue
             try:
-                raw = json.loads(
-                    line,
-                    object_pairs_hook=_unique_json_object,
-                    parse_constant=_reject_json_constant,
-                )
+                raw = parse_strict_json(line)
             except (json.JSONDecodeError, ValueError) as exc:
                 detail = exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {detail}") from exc
@@ -449,15 +459,17 @@ def _image_fidelity(
 
 def _detect(adapter: DetectorAdapter, path: Path, image: NDArray[Any]) -> DetectorOutcome:
     try:
-        if not adapter.available:
-            return DetectorOutcome(status="unavailable", label=None)
         return adapter.detect(path, image)
     except Exception as exc:
         log.warning("Benchmark adapter %s failed for %s: %s", adapter.name, path, exc)
         return DetectorOutcome(status="error", label=None, error=f"{type(exc).__name__}: {exc}")
 
 
-def _detection_record(outcome: DetectorOutcome, expected: ExpectedDetection) -> dict[str, Any]:
+def _detection_record(
+    outcome: DetectorOutcome,
+    expected: ExpectedDetection,
+    adapter_elapsed_ms: float | None,
+) -> dict[str, Any]:
     comparable = outcome.status in ("detected", "not_detected") and expected != "unresolved"
     record: dict[str, Any] = {
         "status": outcome.status,
@@ -465,6 +477,7 @@ def _detection_record(outcome: DetectorOutcome, expected: ExpectedDetection) -> 
         "expected": expected,
         "matches_expected": outcome.status == expected if comparable else None,
         "positive_evidence": outcome.status == "detected",
+        "adapter_elapsed_ms": adapter_elapsed_ms,
     }
     if outcome.error is not None:
         record["error"] = outcome.error
@@ -493,6 +506,7 @@ def evaluate_case(
     adapters: Mapping[str, DetectorAdapter],
     repository: Mapping[str, str | bool],
     reference_decoder: Callable[[Path], NDArray[Any] | None] = _decode_image,
+    clock_ns: Callable[[], int] = time.perf_counter_ns,
 ) -> dict[str, Any]:
     """Evaluate one case while keeping detector and fidelity claims distinct."""
     try:
@@ -500,11 +514,15 @@ def evaluate_case(
     except KeyError as exc:
         raise ValueError(f"unknown adapter {case.adapter!r}") from exc
     artifact = _decode_image(case.path)
-    outcome = (
-        _detect(adapter, case.path, artifact)
-        if artifact is not None
-        else DetectorOutcome(status="error", label=None, error="artifact could not be decoded")
-    )
+    adapter_elapsed_ms: float | None = None
+    if artifact is None:
+        outcome = DetectorOutcome(status="error", label=None, error="artifact could not be decoded")
+    elif not adapter.available:
+        outcome = DetectorOutcome(status="unavailable", label=None)
+    else:
+        started_ns = clock_ns()
+        outcome = _detect(adapter, case.path, artifact)
+        adapter_elapsed_ms = (clock_ns() - started_ns) / 1e6
     return {
         "schema_version": SCHEMA_VERSION,
         "case_id": case.case_id,
@@ -529,7 +547,7 @@ def evaluate_case(
             "kernel_source_sha256": _code_sha256(Path(__file__)),
             "adapter_source_sha256": _code_sha256(adapter.source_file),
         },
-        "detection": _detection_record(outcome, case.expected),
+        "detection": _detection_record(outcome, case.expected, adapter_elapsed_ms),
         "removal": _removal_record(case.state, outcome),
         "fidelity": _image_fidelity(case, artifact, reference_decoder),
     }
