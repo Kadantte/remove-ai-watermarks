@@ -1264,6 +1264,30 @@ class TestEraseCommand:
         assert result.exit_code == 0, result.output
         assert output.exists()
 
+    def test_reencode_keeps_icc_profile_and_orientation(self, runner, tmp_path):
+        """Issue #98: erase re-encodes through cv2, which writes no container
+        metadata, so the output used to come back with no colour profile and no
+        orientation tag. Both must survive the write and the default strip."""
+        import piexif
+        from PIL import ImageCms
+
+        icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+        src = tmp_path / "portrait.png"
+        Image.new("RGB", (96, 64), "red").save(
+            src,
+            icc_profile=icc,
+            exif=piexif.dump({"0th": {piexif.ImageIFD.Orientation: 6}}),
+        )
+        output = tmp_path / "erased.png"
+        result = runner.invoke(
+            main,
+            ["erase", str(src), "--region", "8,8,16,16", "--backend", "cv2", "-o", str(output)],
+        )
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as im:
+            assert im.info.get("icc_profile") == icc
+            assert im.getexif().get(0x0112) == 6
+
     def test_erase_two_regions(self, runner, sample_png, tmp_path):
         output = tmp_path / "erased2.png"
         result = runner.invoke(

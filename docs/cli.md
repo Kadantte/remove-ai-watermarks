@@ -156,6 +156,9 @@ The default behavior:
 - checks the filled region once without changing it or retrying the fill;
 - strips AI metadata from the output.
 
+The re-encode never costs display fidelity: the ICC colour profile and the EXIF
+orientation tag are carried over from the source (see [strip AI metadata](#strip-ai-metadata)).
+
 The automatic command reports `Removed and validated` when the detector no
 longer accepts an overlapping mark, `Partial` when an overlapping residual is
 still detected, and `Post-removal validation unavailable` when the check fails.
@@ -236,7 +239,8 @@ pixels before inpainting, which helps when a mark has a soft edge or a drop
 shadow just outside the box you measured; it applies to every backend because it
 shapes the mask. `--inpaint-method telea|ns` selects the classical algorithm and
 only affects the `cv2` backend. Like `visible`, `erase` strips AI metadata from
-the output by default; pass `--keep-metadata` to retain it.
+the output by default; pass `--keep-metadata` to retain it. The ICC colour profile
+and the EXIF orientation tag survive either way.
 
 ## Strip AI metadata
 
@@ -253,7 +257,11 @@ remove-ai-watermarks metadata image.png --remove -o clean.png
 ```
 
 When `-o` is omitted, removal overwrites the source. Standard metadata is kept
-unless you pass `--remove-all`.
+unless you pass `--remove-all`; that includes the display tags -- the ICC colour
+profile and the EXIF orientation -- which also survive every pixel-command
+re-encode (`all`, `visible`, `invisible`, `erase`), because colour and geometry
+are display fidelity, not provenance. Orientation is re-tagged, not re-applied:
+the raster is untouched, so what displayed upright still displays upright.
 
 A quiet `--check` or a successful `--remove` is not a clean verdict. The command
 only inspects and strips embedded AI metadata; a pixel watermark such as SynthID

@@ -13,6 +13,7 @@ class ImageIFD:
     Make: int
     Artist: int
     ImageDescription: int
+    Orientation: int
 
 class ExifIFD:
     UserComment: int

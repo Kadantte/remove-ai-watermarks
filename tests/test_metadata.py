@@ -2099,6 +2099,54 @@ class TestSixteenBitPngStrip:
 
         assert b"caBX" not in out.read_bytes()
 
+    @staticmethod
+    def _exif_payload(fields: dict[int, object]) -> bytes:
+        """A bare-TIFF ``eXIf`` chunk payload (what the chunk format carries)."""
+        dumped = piexif.dump({"0th": fields})
+        return dumped[6:] if dumped.startswith(b"Exif\x00\x00") else dumped
+
+    def test_the_orientation_survives_the_chunk_walk(self, tmp_path: Path):
+        # eXIf used to be dropped wholesale, taking the display orientation with it
+        # (issue #98); a scrubbed payload survives so a portrait stays a portrait.
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(
+            src,
+            [(b"eXIf", self._exif_payload({piexif.ImageIFD.Orientation: 6, piexif.ImageIFD.Make: "TestCam"}))],
+        )
+
+        remove_ai_metadata(src, out)
+
+        with Image.open(out) as im:
+            assert im.getexif().get(0x0112) == 6
+            assert im.getexif().get(0x010F) == "TestCam"
+
+    def test_the_walk_scrubs_an_ai_token_from_the_kept_exif(self, tmp_path: Path):
+        # The kept eXIf is scrubbed, not trusted: a generator name goes, the
+        # orientation stays.
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(
+            src,
+            [(b"eXIf", self._exif_payload({piexif.ImageIFD.Orientation: 6, piexif.ImageIFD.Make: "Midjourney"}))],
+        )
+
+        remove_ai_metadata(src, out)
+
+        with Image.open(out) as im:
+            assert im.getexif().get(0x0112) == 6
+            assert im.getexif().get(0x010F) is None
+
+    def test_remove_all_drops_the_orientation(self, tmp_path: Path):
+        src, out = tmp_path / "src.png", tmp_path / "out.png"
+        self._write_png16(
+            src,
+            [(b"eXIf", self._exif_payload({piexif.ImageIFD.Orientation: 6}))],
+        )
+
+        remove_ai_metadata(src, out, keep_standard=False)
+
+        with Image.open(out) as im:
+            assert im.getexif().get(0x0112) is None
+
     def test_an_eight_bit_png_keeps_the_shipped_path(self, tmp_path: Path):
         # The chunk walk is scoped to the depth Pillow cannot hold; an ordinary PNG
         # must keep going through PIL, which rewrites the file.
@@ -2111,3 +2159,61 @@ class TestSixteenBitPngStrip:
 
         assert b"parameters" not in out.read_bytes()
         assert Image.open(out).size == (4, 4)
+
+
+class TestDisplayTagsSurviveTheStrip:
+    """The default strip keeps the display-fidelity tags (ICC profile, EXIF
+    orientation) that the re-encode path now carries (issue #98); --remove-all
+    drops them. Before this, PNG and WebP outputs lost the orientation with the
+    rest of EXIF, and Pillow's saver fallback kept the ICC profile alive even
+    under --remove-all, contradicting the documented "removed by --remove-all"."""
+
+    ORIENT = 6
+
+    @staticmethod
+    def _icc() -> bytes:
+        from PIL import ImageCms
+
+        return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+    @classmethod
+    def _png(cls, path: Path, *, orient: int = 6, make: str = "TestCam") -> Path:
+        exif = {"0th": {piexif.ImageIFD.Orientation: orient, piexif.ImageIFD.Make: make}}
+        Image.new("RGB", (96, 64), "red").save(path, icc_profile=cls._icc(), exif=piexif.dump(exif))
+        return path
+
+    def test_png_default_strip_keeps_icc_and_orientation(self, tmp_path: Path):
+        src, out = tmp_path / "s.png", tmp_path / "o.png"
+        self._png(src)
+        remove_ai_metadata(src, out)
+        with Image.open(out) as im:
+            assert im.info.get("icc_profile") == self._icc()
+            assert im.getexif().get(0x0112) == self.ORIENT
+            assert im.getexif().get(0x010F) == "TestCam"  # Make: scrubbed of AI only
+
+    def test_png_remove_all_drops_icc_and_orientation(self, tmp_path: Path):
+        src, out = tmp_path / "s.png", tmp_path / "o.png"
+        self._png(src)
+        remove_ai_metadata(src, out, keep_standard=False)
+        with Image.open(out) as im:
+            assert "icc_profile" not in im.info
+            assert im.getexif().get(0x0112) is None
+
+    def test_png_strip_scrubs_an_ai_token_but_keeps_the_orientation(self, tmp_path: Path):
+        # The kept EXIF is scrubbed, not trusted: a generator name goes, the
+        # orientation stays.
+        src, out = tmp_path / "s.png", tmp_path / "o.png"
+        self._png(src, make="Midjourney")
+        remove_ai_metadata(src, out)
+        with Image.open(out) as im:
+            assert im.getexif().get(0x0112) == self.ORIENT
+            assert im.getexif().get(0x010F) is None
+
+    def test_webp_default_strip_keeps_icc_and_orientation(self, tmp_path: Path):
+        src, out = tmp_path / "s.webp", tmp_path / "o.webp"
+        exif = piexif.dump({"0th": {piexif.ImageIFD.Orientation: self.ORIENT, piexif.ImageIFD.Make: "TestCam"}})
+        Image.new("RGB", (96, 64), "red").save(src, icc_profile=self._icc(), exif=exif, lossless=True)
+        remove_ai_metadata(src, out)
+        with Image.open(out) as im:
+            assert im.info.get("icc_profile") == self._icc()
+            assert im.getexif().get(0x0112) == self.ORIENT

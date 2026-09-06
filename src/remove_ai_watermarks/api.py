@@ -152,7 +152,7 @@ def _write_visible_result(
         # and surfaced as a confusing "cannot read image <INPUT>" naming the OUTPUT path
         # (Tier E, 2026-07-20). Raise here so a library caller and the CLI both get an
         # accurate message about the write.
-        if not image_io.write_bgr_with_alpha(out_path, result, loaded.alpha):
+        if not image_io.write_bgr_with_alpha(out_path, result, loaded.alpha, display_tags_from=source_path):
             raise OSError(f"failed to write output (is the destination writable?): {out_path}")
 
     if strip_metadata:

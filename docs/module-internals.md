@@ -2047,15 +2047,30 @@ Contracts:
 - `read_bgr_and_alpha` reads with `IMREAD_UNCHANGED`, so a 16-bit source stays
   16-bit through the pixel path and out through `imwrite`. Anything downstream that
   needs 8 bits narrows a copy for itself.
+- `imwrite` accepts `display_tags_from` naming the file whose decode produced the
+  pixels, and carries that file's ICC profile and EXIF orientation into the
+  re-encoded output (issue #98: cv2's encoders write no container metadata, so a
+  Display P3 portrait used to come back desaturated and sideways). PNG and JPEG
+  get the tags spliced into the encoded bytes without a second encode; WebP is
+  re-saved losslessly through Pillow (libwebp hides spliced chunks from readers
+  unless a hand-built VP8X announces them); HEIF writers bake orientation into
+  the pixels on save. Orientation is re-tagged only when the raster still has the
+  source's STORED dimensions, decided against the raster's own shape because cv2
+  rotates JPEG and (build-dependent) PNG decodes under `IMREAD_COLOR` but never
+  `IMREAD_UNCHANGED`, which is what the pixel paths read with -- so a decode that
+  already turned the raster upright is never tagged into a double rotation.
 
 The metadata strip is the other half of that contract: Pillow cannot hold 16-bit
 colour, so `remove_ai_metadata`'s open+save path silently returned a 16-bit PNG at
 8 bits. A PNG whose IHDR declares more than 8 bits now goes through
 `_strip_png_metadata_lossless`, which walks the chunk list, drops the AI-bearing
-text chunks plus `eXIf` and `caBX`, and copies IDAT verbatim -- the PNG analogue of
-`_strip_jpeg_metadata_lossless`. A standard `iCCP` colour profile survives the
-default strip and is removed by `--remove-all`. The gate is the depth, not the
-format: at 8 bits PIL is not lossy, so ordinary PNGs keep the shipped path.
+text chunks plus `caBX`, re-emits `eXIf` scrubbed of AI tags, and copies IDAT
+verbatim -- the PNG analogue of `_strip_jpeg_metadata_lossless`. A standard
+`iCCP` colour profile survives the default strip and is removed by `--remove-all`;
+the PIL path forwards the profile and the scrubbed EXIF (orientation included) for
+8-bit PNG and WebP outputs too, where they used to be dropped with the rest of
+EXIF. The gate is the depth, not the format: at 8 bits PIL is not lossy, so
+ordinary PNGs keep the shipped path.
 
 Regression coverage:
 

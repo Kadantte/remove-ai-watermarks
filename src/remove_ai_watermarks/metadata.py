@@ -1397,13 +1397,17 @@ def _strip_png_metadata_lossless(source_path: Path, output_path: Path, keep_stan
     the chunks instead copies the pixel stream verbatim, so the depth -- and every
     pixel-bearing chunk survives untouched. This is the PNG analogue of
     :func:`_strip_jpeg_metadata_lossless`, and it drops the same chunks the PIL path
-    drops: AI-bearing text chunks, ``eXIf`` (PNG output drops EXIF there too) and the
-    ``caBX`` C2PA store. The standard ``iCCP`` colour profile is preserved only when
-    ``keep_standard`` is true.
+    drops: AI-bearing text chunks, ``eXIf`` and the ``caBX`` C2PA store. The standard
+    ``iCCP`` colour profile is preserved only when ``keep_standard`` is true, and
+    ``eXIf`` is re-emitted scrubbed of AI tags rather than dropped, so a portrait's
+    display orientation survives the default strip (issue #98); ``--remove-all``
+    drops both.
 
     Returns False when the bytes are not a walkable PNG, so the caller falls back to
     the PIL re-save.
     """
+    import zlib
+
     from remove_ai_watermarks.forensic_metadata import png_text_decode
 
     data = source_path.read_bytes()
@@ -1419,7 +1423,19 @@ def _strip_png_metadata_lossless(source_path: Path, output_path: Path, keep_stan
         if length > n or end > n:
             return False  # malformed length: defer to the PIL re-encode fallback
         payload = data[pos + 8 : pos + 8 + length] if chunk_type in (b"tEXt", b"zTXt", b"iTXt") else b""
-        if not _png_chunk_should_be_dropped(chunk_type, payload, keep_standard, png_text_decode):
+        if chunk_type == b"eXIf":
+            # Dropped wholesale before, which took the display orientation with it
+            # (issue #98). keep_standard re-emits a scrubbed payload; an unparseable
+            # one still goes, fail-safe as before.
+            scrubbed = _scrubbed_png_exif(data[pos + 8 : pos + 8 + length]) if keep_standard else None
+            if scrubbed is not None:
+                out += (
+                    struct.pack(">I", len(scrubbed))
+                    + b"eXIf"
+                    + scrubbed
+                    + struct.pack(">I", zlib.crc32(b"eXIf" + scrubbed))
+                )
+        elif not _png_chunk_should_be_dropped(chunk_type, payload, keep_standard, png_text_decode):
             out += view[pos:end]
         if chunk_type == b"IEND":
             break
@@ -1430,6 +1446,25 @@ def _strip_png_metadata_lossless(source_path: Path, output_path: Path, keep_stan
     with output_path.open("wb") as stream:
         stream.write(out)
     return True
+
+
+def _scrubbed_png_exif(payload: bytes) -> bytes | None:
+    """Scrub AI tags from a PNG ``eXIf`` payload, returning the bytes to keep.
+
+    The payload is the bare TIFF structure, which piexif loads directly; the shared
+    AI scrub runs and the result is re-dumped in the same bare form. Returns None when
+    the payload does not parse as EXIF, so the caller drops it exactly as before.
+    """
+    import piexif
+
+    try:
+        exif = piexif.load(payload)
+        _scrub_ai_exif(exif)
+        dumped = piexif.dump(exif)
+        return dumped[6:] if dumped.startswith(b"Exif\x00\x00") else dumped
+    except Exception:
+        logger.debug("unparseable eXIf payload; dropped", exc_info=True)
+        return None
 
 
 def _keep_standard_text_metadata(key: str, value: object, keep_standard: bool) -> bool:
@@ -1722,15 +1757,33 @@ def remove_ai_metadata(
                 pnginfo.add_text(k, v)
             save_kwargs["pnginfo"] = pnginfo
 
-        if exif_data and save_kwargs["format"] == "JPEG":
+        if keep_standard and isinstance(img.info.get("icc_profile"), bytes) and img.info["icc_profile"]:
+            # Forward the profile explicitly rather than trusting each saver's
+            # im.info fallback (PNG has one; the others are not contractual), so
+            # the default strip keeps the image's colour for every output format.
+            save_kwargs["icc_profile"] = img.info["icc_profile"]
+        if (
+            exif_data
+            and save_kwargs["format"] in ("JPEG", "PNG", "WEBP")
+            and (save_kwargs["format"] == "JPEG" or keep_standard)
+        ):
             # Scrub AI-provenance EXIF tags (xAI/Grok signature, generator tokens)
-            # while keeping genuine camera/editor EXIF; PNG output drops EXIF entirely.
+            # while keeping genuine camera/editor EXIF, orientation included. PNG
+            # and WebP outputs used to drop EXIF entirely, which took the display
+            # orientation with it: a portrait came back tagged horizontal (issue
+            # #98). --remove-all still drops EXIF wholesale on those two.
             if removed := _scrub_ai_exif(exif_data):
                 logger.info("Scrubbed AI EXIF tag(s): %s", ", ".join(removed))
             with contextlib.suppress(Exception):
                 save_kwargs["exif"] = piexif.dump(exif_data)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        if not keep_standard:
+            # Pillow's PNG/WebP/JPEG savers fall back to im.info["icc_profile"], so a
+            # profile would survive a strip that promised to remove everything.
+            # --remove-all drops it; the default strip keeps it (display fidelity,
+            # issue #98), which is also what the lossless walkers do.
+            img.info.pop("icc_profile", None)
         img.save(output_path, **save_kwargs)
 
     logger.info("Stripped AI metadata → %s", output_path)

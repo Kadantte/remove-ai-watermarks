@@ -453,7 +453,12 @@ def _pixels_required(func: Callable[..., None]) -> Callable[..., None]:
     return wrapper
 
 
-def _write_output_or_exit(output: Path, bgr: NDArray[Any], alpha: NDArray[Any] | None) -> None:
+def _write_output_or_exit(
+    output: Path,
+    bgr: NDArray[Any],
+    alpha: NDArray[Any] | None,
+    display_source: Path | None = None,
+) -> None:
     """Write the final image, or fail with a readable error instead of a traceback.
 
     `image_io.imwrite` is contractually NON-RAISING: it returns False when the codec
@@ -462,9 +467,11 @@ def _write_output_or_exit(output: Path, bgr: NDArray[Any], alpha: NDArray[Any] |
     directory, full disk) died with a bare `FileNotFoundError` traceback pointing at the
     stat, not at the write. Found by the Tier E adversarial sweep 2026-07-20.
     Regression: `tests/test_cli_robustness.py::TestFailedWriteIsReported`.
-    """
+
+    `display_source` is the file whose decode produced `bgr`; its ICC profile and EXIF
+    orientation ride along into the re-encoded output (issue #98)."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    if not image_io.write_bgr_with_alpha(output, bgr, alpha):
+    if not image_io.write_bgr_with_alpha(output, bgr, alpha, display_tags_from=display_source):
         console.print(f"  Error: failed to write output (is the destination writable?): {output}")
         raise SystemExit(1)
 
@@ -709,7 +716,7 @@ def _run_visible_explicit(
         raise SystemExit(1) from e
     elapsed = time.monotonic() - t0
 
-    _write_output_or_exit(output, result, alpha)
+    _write_output_or_exit(output, result, alpha, display_source=source)
     if strip_metadata:
         try:
             from remove_ai_watermarks.metadata import remove_ai_metadata
@@ -863,7 +870,7 @@ def cmd_erase(
         raise SystemExit(1) from e
     elapsed = time.monotonic() - t0
 
-    _write_output_or_exit(output, result, alpha)
+    _write_output_or_exit(output, result, alpha, display_source=source)
 
     if strip_metadata:
         try:

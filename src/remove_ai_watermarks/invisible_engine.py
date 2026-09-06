@@ -380,7 +380,7 @@ class InvisibleEngine:
                     progress=self._progress_callback,
                 )
 
-                image_io.imwrite(out_path, out_cv)
+                image_io.imwrite(out_path, out_cv, display_tags_from=image_path)
 
             return out_path
         finally:

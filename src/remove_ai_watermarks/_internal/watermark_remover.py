@@ -199,14 +199,14 @@ class WatermarkRemover:
             )
         return self._qwen_zimage_pipeline
 
-    def _write_output(self, image: Image.Image, output_path: Path) -> None:
+    def _write_output(self, image: Image.Image, output_path: Path, display_tags_from: Path | None = None) -> None:
         import numpy as np
 
         from remove_ai_watermarks import image_io
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         bgr = np.ascontiguousarray(np.asarray(image.convert("RGB"))[:, :, ::-1])
-        if not image_io.imwrite(str(output_path), bgr):
+        if not image_io.imwrite(str(output_path), bgr, display_tags_from=display_tags_from):
             image.save(output_path)
         from remove_ai_watermarks.metadata import remove_ai_metadata
 
@@ -285,5 +285,5 @@ class WatermarkRemover:
             text_manifest=text_manifest,
             fidelity_anchor=fidelity_anchor,
         )
-        self._write_output(result, destination)
+        self._write_output(result, destination, display_tags_from=image_path)
         return destination
