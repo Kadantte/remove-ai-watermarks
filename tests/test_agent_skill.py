@@ -70,6 +70,40 @@ def test_plugin_and_marketplace_names_agree() -> None:
     assert plugin["license"] == "Apache-2.0"
 
 
+def test_skill_version_agrees_with_plugin_and_marketplace() -> None:
+    text = SKILL.read_text(encoding="utf-8")
+    frontmatter = _frontmatter(text)
+    metadata_version = re.search(r"(?m)^  version:\s*(.*)$", frontmatter)
+    assert metadata_version is not None, "frontmatter metadata.version is missing"
+    skill_version = metadata_version.group(1).strip().strip("'\"")
+    plugin = json.loads(PLUGIN.read_text(encoding="utf-8"))
+    marketplace = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
+    assert skill_version == plugin["version"] == marketplace["metadata"]["version"]
+
+
+def test_skill_stays_under_the_500_line_budget() -> None:
+    lines = SKILL.read_text(encoding="utf-8").count("\n")
+    assert lines <= 500, f"SKILL.md is {lines} lines; move detail into references/"
+
+
+def test_probe_min_cli_version_never_exceeds_the_package_version() -> None:
+    import tomllib
+
+    sys.path.insert(0, str(ROOT / "skills" / "remove-ai-watermarks" / "scripts"))
+    try:
+        import probe
+
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        released = tuple(int(part) for part in pyproject["project"]["version"].split(".")[:3])
+        assert released >= probe.MIN_CLI_VERSION, (
+            "probe.py MIN_CLI_VERSION demands a CLI newer than this package version; "
+            "raise the package version or lower MIN_CLI_VERSION"
+        )
+    finally:
+        sys.path.remove(str(ROOT / "skills" / "remove-ai-watermarks" / "scripts"))
+        sys.modules.pop("probe", None)
+
+
 @pytest.mark.parametrize(
     "relative",
     [
