@@ -1789,7 +1789,7 @@ Diffusers truncation trap sdxl-zimage documents). There is no Canny
 conditioning: the floors were measured on a plain strength pass.
 
 The flat vendor floors (`CHROMA_ZIMAGE_*_STRENGTH` in watermark_profiles):
-OpenAI 0.1375 and Microsoft 0.125, Google 0.40 for zero-face content / 0.125 when
+OpenAI 0.20 and Microsoft 0.125, Google 0.40 for zero-face content / 0.125 when
 faces are detected (a content-adaptive arm from the clean face-count split
 in the calibration: both text cards need 0.25, both face fixtures clear at
 0.12, so the YuNet detector -- already loaded for the face stage -- routes
@@ -1808,7 +1808,8 @@ first-clean is still 0.10; botanical seeds 1 and 2 stay DETECTED at
 that rung, which is the margin the 0.17 floor already holds. A later OpenAI
 holdout invalidated the flat 0.09 conclusion: two carriers first cleared under
 Chroma at 0.10625 and 0.1375, while qwen-zimage cleared both at its existing
-0.07675 operating point. Explicit Chroma now uses 0.1375 and `auto` routes
+0.07675 operating point. Explicit Chroma now uses the spread-derived 0.20,
+verified clean three times on both holdout carriers, and `auto` routes
 OpenAI to qwen-zimage.
 
 A separate content-balanced check on 2026-08-31 tested the exact production

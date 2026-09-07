@@ -251,9 +251,10 @@ established for that stage.
 2026-08-29/30 across the four vendor oracles (full record:
 [`chroma1-engine-research.md`](chroma1-engine-research.md)):
 
-- OpenAI: `0.1375`. Two withheld carriers expanded the Chroma first-clean
-  boundary beyond the original `0.09` policy while qwen-zimage cleared both at
-  its existing `0.07675` operating point;
+- OpenAI: `0.20`. Two withheld carriers expanded the Chroma first-clean boundary
+  to `0.10625` and `0.1375`; adding the face-bearing cohort spread to the worst
+  boundary gives `0.20`, verified clean three times on both, while qwen-zimage
+  cleared both at its existing `0.07675` operating point;
 - Microsoft InvisMark: `0.125` (below qwen's `0.15`);
 - Google: `0.40` for zero-face content (above qwen's `0.27`; at this floor the
   regeneration destroys dense text and collapses face identity -- the tradeoff

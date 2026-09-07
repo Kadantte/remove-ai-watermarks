@@ -493,8 +493,10 @@ second carrier Qwen again had slightly lower LPIPS (0.104 vs 0.109), while Chrom
 had higher SSIM and PSNR.
 
 This invalidates both the 0.09 explicit Chroma floor and the OpenAI auto route.
-Explicit `chroma-zimage` now uses the measured worst-clean rung 0.1375. `auto`
-uses `qwen-zimage` for OpenAI at 0.07675; Chroma remains the Microsoft route.
+For explicit Chroma, the face-bearing cohort rule gives
+`0.1375 + (0.1375 - 0.075) = 0.20`; that candidate was subsequently verified
+clean three times on both holdout carriers. `auto` uses `qwen-zimage` for OpenAI
+at 0.07675; Chroma remains the Microsoft route.
 
 ## Content-balanced engine selection check (2026-08-31)
 

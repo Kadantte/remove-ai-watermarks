@@ -1011,7 +1011,7 @@ def test_chroma_zimage_strength_uses_measured_flat_floors():
 
     assert normalize_profile("chroma_zimage") == "chroma-zimage"
     assert resolve_strength(None, "openai", "chroma-zimage") == pytest.approx(CHROMA_ZIMAGE_OPENAI_STRENGTH)
-    assert pytest.approx(0.1375) == CHROMA_ZIMAGE_OPENAI_STRENGTH
+    assert pytest.approx(0.20) == CHROMA_ZIMAGE_OPENAI_STRENGTH
     assert resolve_strength(None, "microsoft", "chroma-zimage") == pytest.approx(CHROMA_ZIMAGE_MICROSOFT_STRENGTH)
     assert pytest.approx(0.125) == CHROMA_ZIMAGE_MICROSOFT_STRENGTH
     assert resolve_strength(None, "google", "chroma-zimage") == pytest.approx(CHROMA_ZIMAGE_GOOGLE_STRENGTH)
@@ -1046,7 +1046,7 @@ def test_chroma_zimage_inherits_the_shared_stages_and_only_swaps_the_global():
 def test_chroma_requested_steps_compensate_for_the_diffusers_truncation():
     from remove_ai_watermarks._internal.chroma_zimage_pipeline import CHROMA_STEPS, requested_steps
 
-    for strength in (0.1375, 0.125, 0.17, 0.40):
+    for strength in (0.20, 0.125, 0.17, 0.40):
         steps = requested_steps(CHROMA_STEPS, strength)
         assert int(steps * strength) >= CHROMA_STEPS
         assert int(CHROMA_STEPS * strength) < CHROMA_STEPS
@@ -1295,7 +1295,7 @@ def test_chroma_google_face_content_gets_the_lower_adaptive_floor():
     # No face_count hint: conservative (flat floor).
     assert resolve_strength(None, "google", "chroma-zimage") == pytest.approx(0.40)
     # Other vendors ignore face_count: the split is Google-SynthID-specific.
-    assert resolve_strength(None, "openai", "chroma-zimage", face_count=5) == pytest.approx(0.1375)
+    assert resolve_strength(None, "openai", "chroma-zimage", face_count=5) == pytest.approx(0.20)
     assert resolve_strength(None, "meta", "chroma-zimage", face_count=5) == pytest.approx(0.17)
     # An explicit strength still wins over the adaptive arm.
     assert resolve_strength(0.20, "google", "chroma-zimage", face_count=17) == pytest.approx(0.20)
