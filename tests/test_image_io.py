@@ -256,11 +256,12 @@ class TestDisplayTagCarry:
 
     def test_png_output_keeps_profile_and_orientation(self, tmp_path: Path) -> None:
         src = self._source(tmp_path / "src.png")
+        source_icc, _ = self._tags(src)
         raster = self._stored_raster(src)
         out = tmp_path / "out.png"
         assert image_io.imwrite(out, raster, display_tags_from=src) is True
         icc, orient = self._tags(out)
-        assert icc == self._icc()
+        assert icc == source_icc
         assert orient == self.ORIENT
         # The splice must not touch pixels: Pillow decodes without rotating.
         from PIL import Image
@@ -270,20 +271,22 @@ class TestDisplayTagCarry:
 
     def test_jpeg_output_carries_both_tags(self, tmp_path: Path) -> None:
         src = self._source(tmp_path / "src.png")
+        source_icc, _ = self._tags(src)
         raster = self._stored_raster(src)
         out = tmp_path / "out.jpg"
         assert image_io.imwrite(out, raster, display_tags_from=src) is True
         icc, orient = self._tags(out)
-        assert icc == self._icc()
+        assert icc == source_icc
         assert orient == self.ORIENT
 
     def test_webp_output_carries_both_tags_losslessly(self, tmp_path: Path) -> None:
         src = self._source(tmp_path / "src.png")
+        source_icc, _ = self._tags(src)
         raster = self._stored_raster(src)
         out = tmp_path / "out.webp"
         assert image_io.imwrite(out, raster, display_tags_from=src) is True
         icc, orient = self._tags(out)
-        assert icc == self._icc()
+        assert icc == source_icc
         assert orient == self.ORIENT
         # The lossless Pillow re-save must stay pixel-identical.
         back = image_io.imread(out)
@@ -304,12 +307,13 @@ class TestDisplayTagCarry:
         # JPEG/PNG under IMREAD_COLOR) must not receive the tag again. Stored 96x64
         # with Orientation 6 displays as 64x96, so the upright raster is 64 wide.
         src = self._source(tmp_path / "src.png")
+        source_icc, _ = self._tags(src)
         upright = np.zeros((96, 64, 3), np.uint8)  # 64 cols x 96 rows: stored dims swapped
         out = tmp_path / "out.png"
         assert image_io.imwrite(out, upright, display_tags_from=src) is True
         icc, orient = self._tags(out)
         assert orient is None
-        assert icc == self._icc()
+        assert icc == source_icc
 
     def test_a_raster_of_unexplained_shape_is_not_tagged(self, tmp_path: Path) -> None:
         # A resized pipeline output matches neither the stored nor the upright
@@ -340,10 +344,11 @@ class TestDisplayTagCarry:
         # Tags are read BEFORE the write, so rewriting a file over itself cannot
         # lose what it is about to restore.
         path = self._source(tmp_path / "in.png")
+        source_icc, _ = self._tags(path)
         raster = self._stored_raster(path)
         assert image_io.imwrite(path, raster, display_tags_from=path) is True
         icc, orient = self._tags(path)
-        assert icc == self._icc()
+        assert icc == source_icc
         assert orient == self.ORIENT
 
     def test_png_splice_replaces_rather_than_stacks(self, tmp_path: Path) -> None:
@@ -370,13 +375,14 @@ class TestDisplayTagCarry:
         # transposes the raster and writes Orientation 1), so the display result,
         # not the raw tag, is what to assert: upright portrait, exact profile.
         src = self._source(tmp_path / "src.png")
+        source_icc, _ = self._tags(src)
         raster = self._stored_raster(src)
         out = tmp_path / "out.heic"
         assert image_io.imwrite(out, raster, display_tags_from=src) is True
         from PIL import Image
 
         with Image.open(out) as im:
-            assert im.info.get("icc_profile") == self._icc()
+            assert im.info.get("icc_profile") == source_icc
             assert im.size == (64, 96)  # the upright portrait, not the stored landscape
             assert im.getexif().get(0x0112) in (None, 1)
 

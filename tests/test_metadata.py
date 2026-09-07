@@ -2185,9 +2185,11 @@ class TestDisplayTagsSurviveTheStrip:
     def test_png_default_strip_keeps_icc_and_orientation(self, tmp_path: Path):
         src, out = tmp_path / "s.png", tmp_path / "o.png"
         self._png(src)
+        with Image.open(src) as im:
+            source_icc = im.info.get("icc_profile")
         remove_ai_metadata(src, out)
         with Image.open(out) as im:
-            assert im.info.get("icc_profile") == self._icc()
+            assert im.info.get("icc_profile") == source_icc
             assert im.getexif().get(0x0112) == self.ORIENT
             assert im.getexif().get(0x010F) == "TestCam"  # Make: scrubbed of AI only
 
@@ -2213,7 +2215,9 @@ class TestDisplayTagsSurviveTheStrip:
         src, out = tmp_path / "s.webp", tmp_path / "o.webp"
         exif = piexif.dump({"0th": {piexif.ImageIFD.Orientation: self.ORIENT, piexif.ImageIFD.Make: "TestCam"}})
         Image.new("RGB", (96, 64), "red").save(src, icc_profile=self._icc(), exif=exif, lossless=True)
+        with Image.open(src) as im:
+            source_icc = im.info.get("icc_profile")
         remove_ai_metadata(src, out)
         with Image.open(out) as im:
-            assert im.info.get("icc_profile") == self._icc()
+            assert im.info.get("icc_profile") == source_icc
             assert im.getexif().get(0x0112) == self.ORIENT
