@@ -61,7 +61,11 @@ Do these in order after the skill is on the default branch.
 5. **Claude community marketplace.** Form at
    [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)
    (individuals) or the claude.ai directory form (Team/Enterprise). Validate
-   with `claude plugin validate` first. The official Anthropic marketplace is
+   with `claude plugin validate` first. SUBMITTED 2026-09-07 for Claude Code
+   only (strict validation passed; Apache 2.0; description carries the
+   scope boundary; platform selection limited to Claude Code because Cowork
+   was not tested). Pending review; the team may reach out by email. The
+   official Anthropic marketplace is
    curated and has no application.
 6. **ClawHub.** `clawhub login` then `clawhub skill publish` from
    `skills/remove-ai-watermarks/`. The public catalog already has an add-watermark
