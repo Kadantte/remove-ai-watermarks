@@ -29,7 +29,7 @@ _GPU_MARKERS = ("GPU ", "gpu:")
 # its CLI was current right before it typed a value that build rejects.
 # tests/test_agent_skill.py pins it against the package version, so it can never
 # advertise a release that does not exist.
-MIN_CLI_VERSION = (0, 37, 0)
+MIN_CLI_VERSION = (0, 38, 0)
 # Markers a build without the pixel stack prints. The first is the current CLI's own
 # install hint; the rest are what older builds emit before the guard existed, and the
 # Homebrew formula ships exactly such a build.

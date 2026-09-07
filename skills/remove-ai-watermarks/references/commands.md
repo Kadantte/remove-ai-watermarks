@@ -43,8 +43,10 @@ remove-ai-watermarks classify image.png --json
 Pixel classifier, needs the `classify` extra. It is NOT provenance: it guesses
 from pixels alone and `identify` never runs it. Labels are `ai` (both models
 agree), `human`, and `unknown` -- `unknown` is an abstention, not a negative.
-Offer it only when `identify` found no signal and the user still wants a guess,
-and report it as a guess.
+Photographed receipts abstain to `unknown` through the bundled receipt gate
+(since CLI 0.38.0), so a receipt is not reported as `ai`. Offer `classify`
+only when `identify` found no signal and the user still wants a guess, and
+report it as a guess.
 
 ```bash
 remove-ai-watermarks metadata image.png --check
