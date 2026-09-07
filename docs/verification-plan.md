@@ -432,6 +432,32 @@ resource tier; its CPU throughput makes a six-provider online matrix
 counterproductive. Store generated outputs and the detailed CSV only under
 `.local-eval/`.
 
+The audio side of that contract now has a local matched-oracle study:
+[Audio provenance experiment](audio-provenance-experiment.md) embeds AudioSeal
+into synthetic carriers, verifies the copied-audio bitstream identity and a
+watermark verdict invariant across `remove_video_visible`, and measures the
+audio-path attacks separately. Its carriers are synthetic non-speech audio
+and its oracle is AudioSeal, so it validates the copy semantics, not provider
+audio marks. The audio and video arms are now first-class benchmark rows:
+[benchmark kernel](benchmark-kernel.md) accepts `media_type: audio` and
+`media_type: video` with the revision-pinned `audioseal` and `videoseal`
+adapters, and both cohorts carry matched negatives, codec, and degradation
+arms as strict manifest cases. The temporal layer is closed too: videoseal
+detection records carry per-frame bit accuracy, and
+[VideoSeal temporal evaluation](videoseal-temporal-evaluation.md) measures
+the aggregation matrix and the crf decay curve on synthetic and real clips.
+What remains open here is a wider real-content sweep and the learned temporal
+inpainting comparison.
+
+The privacy-tiered C2PA resolution item is closed as a product decision:
+[the resolution research](c2pa-resolution-research.md) measured the five
+vendors' resolver contracts (payload-only, asset digest, or unpublished),
+grounded them in C2PA 2.2 section 18.10.5, and concluded that this tool
+resolves nothing over the network at any tier - querying a resolver tells
+the vendor someone is inspecting the specific content, which is a leak in
+the opposite direction of a removal tool's purpose. A registry guard test
+pins the published-API set so ecosystem changes surface consciously.
+
 The same full-clip gate runs the public metadata-only path against its real MP4
 and verifies unchanged file size, decoded frames, stream properties, and AAC
 packets. A separate synthetic large-`mdat` test rejects full-source

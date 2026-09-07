@@ -85,8 +85,8 @@ def _validate_result(raw: object, *, location: str) -> dict[str, Any]:
         raise ValueError(f"{location}: unsupported benchmark schema {values['schema_version']!r}")
     for field in ("case_id", "pair_id", "adapter", "arm", "state"):
         require_nonempty_string(values[field], field=field, location=location)
-    if values["media_type"] != "image":
-        raise ValueError(f"{location}: media_type must be image")
+    if values["media_type"] not in ("image", "audio", "video"):
+        raise ValueError(f"{location}: media_type must be image, audio, or video")
 
     artifact = _object(values["artifact"], field="artifact", location=location)
     require_sha256(artifact.get("sha256"), field="artifact.sha256", location=location)
@@ -411,6 +411,7 @@ def _fidelity_groups(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
         counts = {"measured": 0, "incomparable": 0, "not_measured": 0, "inconsistent": 0}
         identical = 0
         psnr_values: list[float] = []
+        snr_values: list[float] = []
         for key, (_, value) in pairs.items():
             if key in inconsistent_pairs:
                 counts["inconsistent"] += 1
@@ -425,6 +426,9 @@ def _fidelity_groups(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
                 psnr = value.get("psnr_db")
                 if isinstance(psnr, (int, float)) and not isinstance(psnr, bool) and math.isfinite(psnr):
                     psnr_values.append(float(psnr))
+                snr = value.get("snr_db")
+                if isinstance(snr, (int, float)) and not isinstance(snr, bool) and math.isfinite(snr):
+                    snr_values.append(float(snr))
         summaries.append(
             {
                 "adapter": adapter,
@@ -434,6 +438,8 @@ def _fidelity_groups(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
                 "identical": identical,
                 "finite_psnr": len(psnr_values),
                 "p50_psnr_db": nearest_rank(sorted(psnr_values), 0.50) if psnr_values else None,
+                "finite_snr": len(snr_values),
+                "p50_snr_db": nearest_rank(sorted(snr_values), 0.50) if snr_values else None,
             }
         )
     return summaries
@@ -737,6 +743,8 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
                     ("inconsistent", "Inconsistent"),
                     ("finite_psnr", "Finite PSNR"),
                     ("p50_psnr_db", "p50 PSNR dB"),
+                    ("finite_snr", "Finite SNR"),
+                    ("p50_snr_db", "p50 SNR dB"),
                 ),
                 cast("list[dict[str, Any]]", summary["fidelity"]),
             ),

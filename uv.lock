@@ -246,6 +246,22 @@ wheels = [
 ]
 
 [[package]]
+name = "audioseal"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "omegaconf" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ba/63/7012f074ee592184c5dd2fd119b64b25233bbcc466c803e9d4bf95c64086/audioseal-0.2.0.tar.gz", hash = "sha256:569a16eb898748ea7f3f5d485e094e21ddcebd68314ad873051a79e9e5b708ae", size = 2572957, upload-time = "2025-12-17T13:43:00.651Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/6c/c8875d5e2e8b6b9cb06f483df35b81a2644e793dadd050b33b2d8a8e941d/audioseal-0.2.0-py3-none-any.whl", hash = "sha256:a5989d1e831177e09ba94ec6789ad28ffbd75a2b64e4463a44d92b81f72faf75", size = 63304, upload-time = "2025-12-17T13:42:57.525Z" },
+]
+
+[[package]]
 name = "av"
 version = "18.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1979,8 +1995,8 @@ name = "omegaconf"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "antlr4-python3-runtime", marker = "python_full_version < '3.13'" },
-    { name = "pyyaml", marker = "python_full_version < '3.13'" },
+    { name = "antlr4-python3-runtime" },
+    { name = "pyyaml" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ce/3d/e4b57b8d9008c6ebe0d5eff901f91d5700cf7bdb8c8863df817463a7fd5e/omegaconf-2.3.1.tar.gz", hash = "sha256:e5e7de64aeebeddaf8e6d3f7a783b32ac2a01c0fbd9c878012caecb891a1f42a", size = 3298472, upload-time = "2026-06-11T05:05:12.885Z" }
 wheels = [
@@ -3257,7 +3273,9 @@ detect = [
     { name = "pywavelets" },
 ]
 dev = [
+    { name = "audioseal" },
     { name = "av" },
+    { name = "huggingface-hub" },
     { name = "invisible-watermark" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
@@ -3357,12 +3375,14 @@ visible = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", marker = "extra == 'diffusion'", specifier = ">=0.25.0" },
+    { name = "audioseal", marker = "extra == 'dev'", specifier = ">=0.2.0" },
     { name = "av", marker = "extra == 'video'", specifier = ">=18,<19" },
     { name = "c2pa-python", specifier = ">=0.35.0" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "diffsynth", marker = "extra == 'qwen-zimage'", specifier = ">=2.0.17,<3" },
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
     { name = "huggingface-hub", marker = "extra == 'classify'", specifier = ">=0.20.0" },
+    { name = "huggingface-hub", marker = "extra == 'dev'", specifier = ">=0.20.0" },
     { name = "huggingface-hub", marker = "extra == 'lama'", specifier = ">=0.20.0" },
     { name = "huggingface-hub", marker = "extra == 'migan'", specifier = ">=0.20.0" },
     { name = "huggingface-hub", marker = "extra == 'text-draft'", specifier = ">=0.20.0" },

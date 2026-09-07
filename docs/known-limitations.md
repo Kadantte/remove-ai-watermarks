@@ -207,6 +207,15 @@ The public video results make that boundary explicit without decoding audio:
 the nested audio status reports `copied_if_present` and `unverified`. CLI output
 uses the same terms. These fields add no media pass or model inference.
 
+A local matched-oracle study has now measured the boundary concretely:
+[Audio provenance experiment](audio-provenance-experiment.md) embeds AudioSeal
+into synthetic carriers, runs the visible video-cleaning path, and shows the
+audio packets byte-identical and the watermark verdict invariant across
+cleaning, while additive noise on the audio path is the effective lever. The
+boundary above still stands for provider marks: this tool still does not
+decode them, and a `copied_if_present` audio track remains `unverified` in
+runtime output.
+
 The shipped engine streams sampled frames in bounded batches, computes its
 fidelity metrics incrementally, and pipes regenerated pixels directly to
 ffmpeg. Its frame and latent memory is therefore bounded by `--batch-size`
@@ -345,6 +354,18 @@ diffusion), `--max-resolution` (an explicit downscale), and `--cpu-offload`.
 Memory needs depend on the profile, input size, dtype, and card.
 
 ## Metadata and formats
+
+### Identification never resolves anything over the network
+
+C2PA soft bindings can be resolved to manifests through vendor endpoints
+(the registry carries eight of them), and querying one always tells the
+vendor that someone is inspecting the specific content - directly through
+the asset digest for fingerprint lookups, through the watermark payload for
+payload-based ones. This tool deliberately has no resolution mode, tier, or
+opt-in: identification reports only locally decoded evidence, and the
+watermark decoders in this repository run offline against pinned weights.
+The contracts, the privacy gradient, and the reasoning are recorded in
+[the resolution research](c2pa-resolution-research.md).
 
 ### Missing metadata does not mean clean
 

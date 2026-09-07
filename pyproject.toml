@@ -179,6 +179,11 @@ dev = [
     # Development-only OpenAI Content Provenance oracle. It is not exposed by
     # the installed CLI or the public Python API.
     "openai>=2.52.0",
+    # Development-only local AudioSeal audio watermark oracle for the
+    # scripts/audioseal_experiment.py provenance study. Not part of the
+    # installed CLI, the public Python API, or any runtime pipeline.
+    "audioseal>=0.2.0",
+    "huggingface-hub>=0.20.0",
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",

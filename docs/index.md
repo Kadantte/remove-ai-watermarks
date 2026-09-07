@@ -50,4 +50,8 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [OpenAI SynthID oracle ladders](synthid-oracle-ladders.md) (routing hub)
 - [SynthID detector and removal plan](synthid-detector-removal-plan.md) (chronological mixed archive)
 - [Text protection research](text-protection-research.md)
+- [Audio provenance experiment](audio-provenance-experiment.md) (local AudioSeal matched-oracle study of video audio tracks across visual cleaning)
+- [VideoSeal temporal evaluation](videoseal-temporal-evaluation.md) (per-frame scores, aggregation matrix, and crf decay on synthetic and real clips)
+- [Watermark forgery study](watermark-forgery-study.md) (four-state model and double-embedding: the last writer wins under both oracles)
+- [C2PA resolution research](c2pa-resolution-research.md) (measured resolver contracts, the privacy gradient, and the decision to never resolve over the network)
 - [Chroma1 engine research](chroma1-engine-research.md)

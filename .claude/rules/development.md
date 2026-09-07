@@ -186,7 +186,11 @@ path exempt from the gate it exists to feed, which is exactly backwards.
 Prove a video-path refactor the same way the detection path is proven, and without
 needing an oracle carrier: build a clip from a tracked fixture with ffmpeg, run the
 engine before and after, and require an identical output sha256. Keep the generated
-media outside the repository.
+media outside the repository. Bind that comparison to one synced environment: a
+full-extras `uv sync` was observed to change re-encoded H.264 packet bytes with
+no code change while every detection stayed identical
+(`docs/audio-provenance-experiment.md`), so a moved video hash across an
+environment change is not by itself a regression signal.
 
 Frame sampling is compared as `timestamp + 1e-9 >= next_sample_time`, so mutating
 that `>=` to `>` changes nothing and a green suite proves nothing. Mutate the phase
