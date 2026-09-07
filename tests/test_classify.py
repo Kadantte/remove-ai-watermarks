@@ -63,19 +63,21 @@ def test_runtime_requests_the_exported_allow_patterns(monkeypatch: pytest.Monkey
     """
     from remove_ai_watermarks.classify import _WEIGHT_FILES, _weights_dir
 
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = []
 
     def fake_snapshot_download(**kwargs: object) -> str:
-        captured.update(kwargs)
+        captured.append(kwargs)
         return "/cached/snapshot"
 
-    monkeypatch.setattr("huggingface_hub.snapshot_download", fake_snapshot_download)
+    # huggingface_hub ships with the classify extra, not with the dev sync,
+    # so stub the module instead of importing it.
+    monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(snapshot_download=fake_snapshot_download))
     monkeypatch.delenv("RAIW_CLASSIFY_WEIGHTS", raising=False)
 
     assert _weights_dir() == Path("/cached/snapshot")
-    assert captured["repo_id"] == WEIGHTS_REPO
-    assert captured["revision"] == WEIGHTS_REVISION
-    assert captured["allow_patterns"] == list(WEIGHTS_ALLOW_PATTERNS)
+    assert captured[0]["repo_id"] == WEIGHTS_REPO
+    assert captured[0]["revision"] == WEIGHTS_REVISION
+    assert captured[0]["allow_patterns"] == list(WEIGHTS_ALLOW_PATTERNS)
     assert set(_WEIGHT_FILES) <= set(WEIGHTS_ALLOW_PATTERNS)
 
 
