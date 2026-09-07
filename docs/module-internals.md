@@ -1035,7 +1035,10 @@ not one producer. The freeze file keys the Muse Image head
 downloads and pin that `identify` does not import this module.
 
 Weights stay out of git. The Hub snapshot is `wiltodelta/raiw-photo-classify`.
-`RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. User guide:
+`RAIW_CLASSIFY_WEIGHTS` overrides it. The extra is `classify`. The runtime
+resolves the snapshot through `WEIGHTS_ALLOW_PATTERNS`, exported so an
+offline deploy's pre-cache installs the exact runtime request as one name
+(`tests/test_classify.py` pins the seam). User guide:
 [photo-classify.md](photo-classify.md). Hub card:
 [photo-classify-hf/README.md](photo-classify-hf/README.md).
 

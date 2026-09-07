@@ -18,6 +18,7 @@ from remove_ai_watermarks.classify import (
     RECEIPT_GATE_FILE,
     RECEIPT_GATE_THRESHOLD,
     RIDGE_THRESHOLD,
+    WEIGHTS_ALLOW_PATTERNS,
     WEIGHTS_REPO,
     WEIGHTS_REVISION,
     classify_from_scores,
@@ -50,6 +51,32 @@ def _scores(
 def test_hub_snapshot_is_the_freeze_revision() -> None:
     assert WEIGHTS_REPO == "wiltodelta/raiw-photo-classify"
     assert WEIGHTS_REVISION == "ffc46db5135ee3a83f51538f2c8f7483b9b8b40c"
+
+
+def test_runtime_requests_the_exported_allow_patterns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exported pre-cache list and the runtime request must stay one list.
+
+    An offline deploy pre-caches WEIGHTS_ALLOW_PATTERNS from the Hub; the
+    runtime then resolves the same snapshot offline. If the runtime's request
+    grows a file the export misses, every offline deployment breaks on a
+    four-fifths-present cache, so pin the seam in both directions.
+    """
+    from remove_ai_watermarks.classify import _WEIGHT_FILES, _weights_dir
+
+    captured: dict[str, object] = {}
+
+    def fake_snapshot_download(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "/cached/snapshot"
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", fake_snapshot_download)
+    monkeypatch.delenv("RAIW_CLASSIFY_WEIGHTS", raising=False)
+
+    assert _weights_dir() == Path("/cached/snapshot")
+    assert captured["repo_id"] == WEIGHTS_REPO
+    assert captured["revision"] == WEIGHTS_REVISION
+    assert captured["allow_patterns"] == list(WEIGHTS_ALLOW_PATTERNS)
+    assert set(_WEIGHT_FILES) <= set(WEIGHTS_ALLOW_PATTERNS)
 
 
 def test_shipped_operating_point_matches_the_runtime_defaults() -> None:

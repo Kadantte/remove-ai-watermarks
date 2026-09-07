@@ -45,7 +45,11 @@ Weights are not in git. First call downloads
 at the freeze revision pinned in `classify.py`, or reads
 `RAIW_CLASSIFY_WEIGHTS` if that directory already has `clip-l-ft.pt`,
 `probe-weights-clip-l-ft.npz`, `detector.pt`, and `provider.pt`. The training
-catalog is not published with the package.
+catalog is not published with the package. Deployments that pre-cache the
+snapshot for offline resolution must request exactly
+`classify.WEIGHTS_ALLOW_PATTERNS` (the runtime resolves that same list under
+`HF_HUB_OFFLINE=1`; a partial pre-cache fails the whole resolution, even for
+files the runtime would fall back on).
 
 ## What one call returns
 

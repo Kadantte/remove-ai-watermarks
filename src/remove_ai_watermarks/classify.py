@@ -39,6 +39,18 @@ _WEIGHT_FILES = (CLIP_FILE, PROBE_FILE, DETECTOR_FILE, PROVIDER_FILE)
 RECEIPT_GATE_FILE = "receipt-gate-2026-09-02.npz"
 RECEIPT_GATE_THRESHOLD = 2.0432573877459697
 
+# The complete file set the runtime's snapshot_download may request. Deploy-time
+# pre-caches in offline environments (HF_HUB_OFFLINE=1) must install exactly
+# this list: a subset leaves the runtime resolution unsatisfiable and every
+# classify call fails on weights that are four-fifths present. Exported so a
+# pre-cache imports one name instead of re-listing the files and silently
+# drifting the next time a release adds one.
+WEIGHTS_ALLOW_PATTERNS: tuple[str, ...] = (
+    *_WEIGHT_FILES,
+    OPERATING_POINT_FILE,
+    RECEIPT_GATE_FILE,
+)
+
 # 2026-08-31 freeze operating point. Ridge threshold is also in the probe file;
 # the runtime prefers the file when weights load.
 MLP_THRESHOLD = 5.9586493237495395
@@ -289,7 +301,7 @@ def _weights_dir() -> Path:
             snapshot_download(
                 repo_id=WEIGHTS_REPO,
                 revision=WEIGHTS_REVISION,
-                allow_patterns=[*_WEIGHT_FILES, OPERATING_POINT_FILE, RECEIPT_GATE_FILE],
+                allow_patterns=list(WEIGHTS_ALLOW_PATTERNS),
             )
         )
     except Exception as exc:
