@@ -122,7 +122,6 @@ Default: inspect first.
 | Everything on an image | `all` | `image_all=do_not_run_writes_nothing` |
 | A directory | `batch` or `video batch` | same as the mode |
 | No signal found, user still wants a guess | `classify` | it is a guess, not provenance |
-| An independent OpenAI SynthID reading | `verify-openai-synthid` | it uploads the image; ask first |
 
 Flags and mark names: [references/commands.md](references/commands.md). Read
 that file only when you need a flag, a mark key, or a video recipe.
@@ -182,9 +181,6 @@ its metadata proxy is gone. Repeat that caveat; do not summarize it away.
   the file untouched.
 - A question ("is this AI-generated?") is answered by `identify` alone. Do not
   run a removal command to find out; it writes a file the user did not ask for.
-- `verify-openai-synthid` sends the user's picture to a third party. Get an
-  explicit yes in this conversation before running it, every time, and say what
-  leaves the machine. Never run it to "check" something on your own initiative.
 - `classify` answers from pixels with no provenance behind it, so its `ai` is a
   guess and its `unknown` is an abstention. Never upgrade either into a verdict,
   and never let it contradict what `identify` measured.

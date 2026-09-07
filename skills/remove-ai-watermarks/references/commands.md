@@ -47,16 +47,6 @@ Offer it only when `identify` found no signal and the user still wants a guess,
 and report it as a guess.
 
 ```bash
-remove-ai-watermarks verify-openai-synthid image.png --acknowledge-upload
-```
-
-This UPLOADS a copy of the user's image to OpenAI, so never run it without the
-user's explicit go-ahead in this conversation; `--acknowledge-upload` is that
-consent and the command refuses without it. It strips AI metadata from a
-temporary pixel-identical copy, reads only the SynthID result, and never
-modifies the source. Needs the `verify` extra.
-
-```bash
 remove-ai-watermarks metadata image.png --check
 remove-ai-watermarks metadata image.png --remove -o clean.png
 ```

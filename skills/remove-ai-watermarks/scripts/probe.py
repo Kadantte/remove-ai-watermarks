@@ -23,8 +23,8 @@ from typing import Any
 _GPU_MARKERS = ("GPU ", "gpu:")
 # Below this, the CLI predates flags and behavior this skill documents. Raise it in
 # the same change as any reference that names a flag the previous release lacked:
-# 0.37.0 is here because `classify` and `verify-openai-synthid` arrived with it
-# (`--pipeline auto` needed 0.36.0; chroma-zimage and the doubao video mark 0.35.0;
+# 0.37.0 is here because `classify` arrived with it (`--pipeline auto` needed
+# 0.36.0; chroma-zimage and the doubao video mark 0.35.0;
 # the `microsoft` mark 0.34.0; `--vendor` 0.32.0), and a stale floor told an agent
 # its CLI was current right before it typed a value that build rejects.
 # tests/test_agent_skill.py pins it against the package version, so it can never
