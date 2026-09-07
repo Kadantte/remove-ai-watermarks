@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "watermark_benchmark_cohort.py"
 SPEC = importlib.util.spec_from_file_location("watermark_benchmark_cohort", SCRIPT)
@@ -49,6 +50,43 @@ def test_cohort_refuses_an_existing_output_directory(tmp_path: Path) -> None:
 
     with pytest.raises(FileExistsError, match="output directory already exists"):
         MODULE.build_cohort(output, adapters=("dwt-dct",))
+
+
+def test_cohort_size_is_explicit_in_artifacts_and_case_identity(tmp_path: Path) -> None:
+    output = tmp_path / "cohort"
+
+    manifest = MODULE.build_cohort(
+        output,
+        adapters=("dwt-dct",),
+        carriers=(MODULE.CarrierSpec("texture", 7),),
+        dwt_schemes=("sdxl",),
+        attacks=("resize-75",),
+        size=256,
+    )
+    rows = MODULE.load_manifest(manifest)
+
+    assert all("256px" in row.case_id for row in rows)
+    assert all(row.transform.parameters["size"] == [256, 256] for row in rows)
+    for row in rows:
+        with Image.open(row.path) as image:
+            assert image.size == (256, 256)
+
+
+def test_resize_attack_scales_relative_to_the_carrier() -> None:
+    image = MODULE._carrier(MODULE.CarrierSpec("texture", 7), size=256)
+
+    observed = MODULE.attack_image(image, "resize-75")
+    expected = image.resize((192, 192), Image.Resampling.LANCZOS).resize((256, 256), Image.Resampling.LANCZOS)
+    old_fixed_size = image.resize((384, 384), Image.Resampling.LANCZOS).resize((256, 256), Image.Resampling.LANCZOS)
+
+    assert observed.tobytes() == expected.tobytes()
+    assert observed.tobytes() != old_fixed_size.tobytes()
+
+
+@pytest.mark.parametrize("size", [255, 258])
+def test_cohort_rejects_unsupported_size(tmp_path: Path, size: int) -> None:
+    with pytest.raises(ValueError, match="at least 256 and divisible by 16"):
+        MODULE.build_cohort(tmp_path / f"cohort-{size}", adapters=("dwt-dct",), size=size)
 
 
 def test_trustmark_cohort_includes_removed_observation(tmp_path: Path) -> None:

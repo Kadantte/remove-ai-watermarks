@@ -56,6 +56,7 @@ def _row(
     elapsed_ms: float | None = 2.0,
     transform: str = "embed",
     expected: str = "detected",
+    transform_parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     digest = BENCHMARK.sha256_file(artifact)
     case = BENCHMARK.BenchmarkCase(
@@ -70,7 +71,11 @@ def _row(
         reference_path=artifact,
         reference_sha256=digest,
         source_revision="cohort@abc",
-        transform=BENCHMARK.Transform(name=transform, revision="recipe-v1", parameters={}),
+        transform=BENCHMARK.Transform(
+            name=transform,
+            revision="recipe-v1",
+            parameters=transform_parameters or {},
+        ),
         seed=7,
         expected=expected,
     )
@@ -194,6 +199,92 @@ def test_summary_rejects_case_identity_drift_between_runs(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="case identity drift"):
         MODULE.summarize(MODULE.load_results([first, second]))
+
+
+def test_summary_preserves_real_cohort_provider_and_content_strata(tmp_path: Path) -> None:
+    first_artifact = _image(tmp_path / "first.png", 10)
+    second_artifact = _image(tmp_path / "second.png", 20)
+    first = _row(
+        first_artifact,
+        "first",
+        transform_parameters={
+            "scheme": "sdxl",
+            "source": {"provider": "openai", "content_stratum": "portrait"},
+        },
+    )
+    second = _row(
+        second_artifact,
+        "second",
+        status="not_detected",
+        transform_parameters={
+            "scheme": "sdxl",
+            "source": {"provider": "meta", "content_stratum": "portrait"},
+        },
+    )
+    source = _write(tmp_path / "run.jsonl", [first, second])
+
+    summary = MODULE.summarize(MODULE.load_results([source]))
+
+    openai = _group(
+        summary,
+        "detection_by_source_provider",
+        adapter="dwt-dct",
+        state="marked",
+        provider="openai",
+    )
+    portrait = _group(
+        summary,
+        "detection_by_content_stratum",
+        adapter="dwt-dct",
+        state="marked",
+        content_stratum="portrait",
+    )
+    profile = _group(
+        summary,
+        "detection_by_profile",
+        adapter="dwt-dct",
+        state="marked",
+        profile="sdxl",
+    )
+    assert openai["detected"] == 1
+    assert portrait["unique_artifacts"] == 2
+    assert portrait["detected"] == 1
+    assert portrait["not_detected"] == 1
+    assert profile["unique_artifacts"] == 2
+
+
+def test_summary_reports_attack_transitions_from_each_marked_pair(tmp_path: Path) -> None:
+    marked_artifact = _image(tmp_path / "marked.png", 10)
+    attacked_artifact = _image(tmp_path / "attacked.png", 20)
+    marked = _row(marked_artifact, "pair--marked", status="not_detected")
+    attacked = _row(
+        attacked_artifact,
+        "pair--jpeg",
+        state="attacked",
+        status="detected",
+        transform="embed-then-jpeg",
+        expected="unresolved",
+    )
+    source = _write(tmp_path / "run.jsonl", [marked, attacked])
+
+    summary = MODULE.summarize(MODULE.load_results([source]))
+
+    transitions = _group(
+        summary,
+        "attack_transitions",
+        adapter="dwt-dct",
+        transform="embed-then-jpeg",
+    )
+    assert transitions == {
+        "adapter": "dwt-dct",
+        "transform": "embed-then-jpeg",
+        "pairs": 1,
+        "retained": 0,
+        "lost": 0,
+        "gained": 1,
+        "still_not_detected": 0,
+        "unmeasured": 0,
+    }
 
 
 def test_loader_names_invalid_json_location(tmp_path: Path) -> None:

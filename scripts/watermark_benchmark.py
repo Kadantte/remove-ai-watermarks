@@ -35,7 +35,7 @@ import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
-from functools import cache, lru_cache
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
@@ -352,10 +352,16 @@ def _detect_dwt_dct(path: Path, image: NDArray[Any]) -> str | None:
     return detect_invisible_watermark(path, image=to_bgr(image))
 
 
-def _detect_trustmark(path: Path, _image: NDArray[Any]) -> str | None:
-    from remove_ai_watermarks.trustmark_detector import detect_trustmark
+def _detect_trustmark(path: Path, image: NDArray[Any]) -> str | None:
+    import cv2
+    import numpy as np
+    from PIL import Image
 
-    return detect_trustmark(path)
+    from remove_ai_watermarks.image_io import to_bgr
+    from remove_ai_watermarks.trustmark_detector import detect_trustmark_image
+
+    rgb = cv2.cvtColor(to_bgr(image), cv2.COLOR_BGR2RGB)
+    return detect_trustmark_image(Image.fromarray(np.ascontiguousarray(rgb), "RGB"), source=path)
 
 
 def default_adapters() -> dict[str, DetectorAdapter]:
@@ -422,7 +428,7 @@ def _image_fidelity(
 
     import numpy as np
 
-    reference = reference_decoder(case.reference_path)
+    reference = artifact if case.reference_path == case.path else reference_decoder(case.reference_path)
     if artifact is None or reference is None:
         return {"status": "not_measured", "reason": "decoded_pixels_unavailable"}
     if artifact.shape != reference.shape:
@@ -505,6 +511,7 @@ def evaluate_case(
     *,
     adapters: Mapping[str, DetectorAdapter],
     repository: Mapping[str, str | bool],
+    artifact_decoder: Callable[[Path], NDArray[Any] | None] = _decode_image,
     reference_decoder: Callable[[Path], NDArray[Any] | None] = _decode_image,
     clock_ns: Callable[[], int] = time.perf_counter_ns,
 ) -> dict[str, Any]:
@@ -513,7 +520,7 @@ def evaluate_case(
         adapter = adapters[case.adapter]
     except KeyError as exc:
         raise ValueError(f"unknown adapter {case.adapter!r}") from exc
-    artifact = _decode_image(case.path)
+    artifact = artifact_decoder(case.path)
     adapter_elapsed_ms: float | None = None
     if artifact is None:
         outcome = DetectorOutcome(status="error", label=None, error="artifact could not be decoded")
@@ -585,7 +592,16 @@ def run_benchmark(manifest: Path, output: Path) -> Counter[str]:
         raise ValueError(f"unknown adapters: {', '.join(unknown)}")
     repository = repository_state()
     counts: Counter[str] = Counter()
-    reference_decoder = lru_cache(maxsize=8)(_decode_image)
+    path_counts = Counter(case.path for case in cases)
+    path_counts.update(case.reference_path for case in cases if case.reference_path is not None)
+    recurring_images: dict[Path, NDArray[Any] | None] = {}
+
+    def decode_image(path: Path) -> NDArray[Any] | None:
+        if path_counts[path] < 2:
+            return _decode_image(path)
+        if path not in recurring_images:
+            recurring_images[path] = _decode_image(path)
+        return recurring_images[path]
 
     def records() -> Iterable[dict[str, Any]]:
         for case in cases:
@@ -593,7 +609,8 @@ def run_benchmark(manifest: Path, output: Path) -> Counter[str]:
                 case,
                 adapters=adapters,
                 repository=repository,
-                reference_decoder=reference_decoder,
+                artifact_decoder=decode_image,
+                reference_decoder=decode_image,
             )
             counts[record["detection"]["status"]] += 1
             yield record

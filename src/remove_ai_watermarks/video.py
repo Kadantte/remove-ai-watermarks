@@ -8,7 +8,7 @@ The visible pixel path reuses the image package's shared fill backends.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Literal
@@ -64,15 +64,26 @@ class VideoAudioStatus:
     watermark_status: Literal["unverified"] = "unverified"
 
 
+class _VideoAudioBoundary:
+    """Derive the audio disposition from whether an output was written."""
+
+    @property
+    def audio(self) -> VideoAudioStatus:
+        """Return the non-claiming audio status for this result."""
+        action: Literal["copied_if_present", "not_written"] = (
+            "copied_if_present" if getattr(self, "output", None) is not None else "not_written"
+        )
+        return VideoAudioStatus(stream_action=action)
+
+
 @dataclass(frozen=True)
-class VideoMetadataResult:
+class VideoMetadataResult(_VideoAudioBoundary):
     """Result of a verified metadata strip that preserves source audio."""
 
     source: Path
     output: Path
     detected: dict[str, str]
     remaining: dict[str, str]
-    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
 
 
 @dataclass(frozen=True)
@@ -92,7 +103,7 @@ class VideoProvenanceReport:
 
 
 @dataclass(frozen=True)
-class VideoVisibleResult:
+class VideoVisibleResult(_VideoAudioBoundary):
     """Result of visible AI-watermark removal with unverified copied audio."""
 
     source: Path
@@ -102,15 +113,10 @@ class VideoVisibleResult:
     detected_frames: int
     removed_frames: int
     remaining_metadata: dict[str, str]
-    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
-
-    def __post_init__(self) -> None:
-        if self.output is None:
-            object.__setattr__(self, "audio", VideoAudioStatus(stream_action="not_written"))
 
 
 @dataclass(frozen=True)
-class VideoInvisibleResult:
+class VideoInvisibleResult(_VideoAudioBoundary):
     """Result of applying the calibrated VAE profile to video pixels only."""
 
     source: Path
@@ -118,7 +124,6 @@ class VideoInvisibleResult:
     noise_std: float
     metrics: RegenerationMetrics
     remaining_metadata: dict[str, str]
-    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
 
     @property
     def visual_invisible_action(self) -> Literal["regenerated"]:
@@ -151,7 +156,7 @@ class VideoInvisibleResult:
 
 
 @dataclass(frozen=True)
-class VideoAllResult:
+class VideoAllResult(_VideoAudioBoundary):
     """Result of visible, metadata, and optional video-pixel processing."""
 
     source: Path
@@ -163,7 +168,6 @@ class VideoAllResult:
     detected_metadata: dict[str, str]
     remaining_metadata: dict[str, str]
     invisible_removed: bool
-    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:
@@ -172,7 +176,7 @@ class VideoAllResult:
 
 
 @dataclass(frozen=True)
-class VideoBatchItem:
+class VideoBatchItem(_VideoAudioBoundary):
     """Outcome for one source in a video batch, including the audio boundary."""
 
     source: Path
@@ -182,11 +186,6 @@ class VideoBatchItem:
     visible_mark: str | None
     invisible_removed: bool
     error: str | None = None
-    audio: VideoAudioStatus = field(default_factory=VideoAudioStatus, init=False)
-
-    def __post_init__(self) -> None:
-        if self.output is None:
-            object.__setattr__(self, "audio", VideoAudioStatus(stream_action="not_written"))
 
     @property
     def visual_invisible_action(self) -> Literal["not_run", "regenerated"]:

@@ -248,6 +248,31 @@ def test_identical_pair_marks_psnr_as_unbounded_not_zero(tmp_path: Path) -> None
     }
 
 
+def test_identical_artifact_and_reference_are_decoded_once(tmp_path: Path) -> None:
+    artifact = _image(tmp_path / "same.png", 90)
+    case = MODULE.load_manifest(
+        _write_manifest(
+            tmp_path / "manifest.jsonl",
+            [_row(artifact, reference=artifact, state="clean", expected="not_detected")],
+        )
+    )[0]
+    calls: list[Path] = []
+
+    def decode(path: Path) -> Any:
+        calls.append(path)
+        return np.full((32, 40, 3), 90, dtype=np.uint8)
+
+    MODULE.evaluate_case(
+        case,
+        adapters={"fake": _FakeAdapter(status="not_detected", label=None)},
+        repository={"commit": "abc123", "dirty": False},
+        artifact_decoder=decode,
+        reference_decoder=lambda _path: pytest.fail("identical reference was decoded again"),
+    )
+
+    assert calls == [artifact.resolve()]
+
+
 def test_missing_reference_is_explicitly_unmeasured(tmp_path: Path) -> None:
     artifact = _image(tmp_path / "marked.png", 100)
     manifest = _write_manifest(tmp_path / "manifest.jsonl", [_row(artifact)])
@@ -370,6 +395,34 @@ def test_builtin_adapters_name_their_exact_source_files() -> None:
     assert set(adapters) == {"dwt-dct", "trustmark"}
     assert adapters["dwt-dct"].source_file.name == "invisible_watermark.py"
     assert adapters["trustmark"].source_file.name == "trustmark_detector.py"
+
+
+def test_run_benchmark_caches_only_recurring_images(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    recurring = _image(tmp_path / "recurring.png", 90)
+    unique = _image(tmp_path / "unique.png", 100)
+    manifest = _write_manifest(
+        tmp_path / "manifest.jsonl",
+        [
+            _row(recurring, case_id="case-1", state="clean", expected="not_detected"),
+            _row(recurring, case_id="case-2", state="clean", expected="not_detected"),
+            _row(unique, case_id="case-3", state="clean", expected="not_detected"),
+        ],
+    )
+    real_decode = MODULE._decode_image
+    calls: list[Path] = []
+
+    def decode(path: Path) -> Any:
+        calls.append(path)
+        return real_decode(path)
+
+    monkeypatch.setattr(MODULE, "_decode_image", decode)
+    monkeypatch.setattr(MODULE, "default_adapters", lambda: {"fake": _FakeAdapter("not_detected", None)})
+    monkeypatch.setattr(MODULE, "repository_state", lambda: {"commit": "abc123", "dirty": False})
+
+    MODULE.run_benchmark(manifest, tmp_path / "results.jsonl")
+
+    assert calls.count(recurring.resolve()) == 1
+    assert calls.count(unique.resolve()) == 1
 
 
 def test_run_benchmark_writes_official_trustmark_result(tmp_path: Path) -> None:

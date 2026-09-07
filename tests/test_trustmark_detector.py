@@ -12,10 +12,11 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from remove_ai_watermarks import trustmark_detector
 from remove_ai_watermarks.identify import identify
-from remove_ai_watermarks.trustmark_detector import detect_trustmark, is_available
+from remove_ai_watermarks.trustmark_detector import detect_trustmark, detect_trustmark_image, is_available
 
 _OFFICIAL_FIXTURE = (
     Path(__file__).resolve().parent.parent / "data" / "fixtures" / "provenance" / "adobe-trustmark-p.png"
@@ -74,6 +75,15 @@ class TestFalsePositiveGate:
         result = detect_trustmark(tmp_clean_png)
         assert result == "Adobe TrustMark (variant P, schema 2)"
         assert decoder.calls == 2  # original + re-encode
+
+    def test_already_decoded_image_uses_the_same_gate(self, monkeypatch):
+        decoder = _FakeDecoder(("secret", True, 2), ("secret", True, 2))
+        self._patch_decoder(monkeypatch, decoder)
+
+        result = detect_trustmark_image(Image.new("RGB", (32, 32)), source="benchmark fixture")
+
+        assert result == "Adobe TrustMark (variant P, schema 2)"
+        assert decoder.calls == 2
 
     def test_false_positive_collapsing_on_reencode_is_dropped(self, monkeypatch, tmp_clean_png: Path):
         # Present on the original, absent after re-encode -> content-noise FP.

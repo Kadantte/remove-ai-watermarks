@@ -23,6 +23,11 @@ hash under `sha256`; `source_payload_sha256` preserves that value while
 `sha256` always means the actual file bytes here. Meta's two hashes are the
 same.
 
+The project maintainer has cleared these exact committed outputs for permanent
+public test and benchmark reuse. `reuse_basis` records that clearance on every
+row. It is permission for this fixed fixture set, not a claim that either
+provider grants a general-purpose dataset license for arbitrary generations.
+
 One generation per prompt and provider is enough for the first paired
 discovery pass. Any policy inferred from it must be challenged against unused
 generation indices from the local research archive before shipping. Generated

@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from PIL import Image
+
 logger = logging.getLogger(__name__)
 
 # Adobe ships Variant P in production (com.adobe.trustmark.P).
@@ -66,9 +68,43 @@ def _decoder() -> Any:
 _REENCODE_QUALITY = 95
 
 
+def _detect_cover(cover: Image.Image, source: object) -> str | None:
+    """Decode one RGB cover after availability and image loading are resolved."""
+    try:
+        decoder = _decoder()
+        wm_secret, wm_present, wm_schema = decoder.decode(cover, "binary")
+        if not wm_present:
+            return None
+        if wm_schema not in _SUPPORTED_SCHEMAS:
+            logger.debug(
+                "TrustMark decode for %s used weak schema %s; treating as false positive",
+                source,
+                wm_schema,
+            )
+            return None
+        if not _survives_reencode(decoder, cover, wm_secret, wm_schema):
+            logger.debug("TrustMark decode for %s did not survive re-encode; treating as false positive", source)
+            return None
+    except Exception as exc:  # model download / decode failure
+        logger.debug("TrustMark decode failed for %s: %s", source, exc)
+        return None
+    return f"Adobe TrustMark (variant {_MODEL_TYPE}, schema {wm_schema})"
+
+
+def detect_trustmark_image(image: Image.Image, *, source: object = "decoded image") -> str | None:
+    """Detect a durable TrustMark in an already decoded Pillow image."""
+    if not is_available():
+        return None
+    try:
+        cover = image.convert("RGB")
+    except Exception as exc:
+        logger.debug("TrustMark image conversion failed for %s: %s", source, exc)
+        return None
+    return _detect_cover(cover, source)
+
+
 def detect_trustmark(image_path: Path) -> str | None:
-    """Return a TrustMark scheme note if a *durable* TrustMark watermark is
-    decoded, else None.
+    """Return a TrustMark scheme note if a *durable* TrustMark watermark is decoded, else None.
 
     Returns e.g. ``"Adobe TrustMark (variant P, schema 0)"`` when the decoder
     reports the watermark present AND it survives a mild JPEG re-encode, or None
@@ -93,24 +129,10 @@ def detect_trustmark(image_path: Path) -> str | None:
 
         with Image.open(image_path) as img:
             cover = img.convert("RGB")
-        decoder = _decoder()
-        wm_secret, wm_present, wm_schema = decoder.decode(cover, "binary")
-        if not wm_present:
-            return None
-        if wm_schema not in _SUPPORTED_SCHEMAS:
-            logger.debug(
-                "TrustMark decode for %s used weak schema %s; treating as false positive",
-                image_path,
-                wm_schema,
-            )
-            return None
-        if not _survives_reencode(decoder, cover, wm_secret, wm_schema):
-            logger.debug("TrustMark decode for %s did not survive re-encode; treating as false positive", image_path)
-            return None
-    except Exception as exc:  # model download / decode failure / unreadable image
+    except Exception as exc:  # unreadable image
         logger.debug("TrustMark decode failed for %s: %s", image_path, exc)
         return None
-    return f"Adobe TrustMark (variant {_MODEL_TYPE}, schema {wm_schema})"
+    return _detect_cover(cover, image_path)
 
 
 def _survives_reencode(decoder: Any, cover: Any, payload: str, schema: int) -> bool:

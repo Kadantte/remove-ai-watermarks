@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from PIL import Image
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
@@ -67,6 +67,27 @@ class CarrierSpec:
     seed: int
 
 
+def validate_cohort_options(
+    adapters: Sequence[AdapterName],
+    dwt_schemes: Sequence[str],
+    attacks: Sequence[AttackName],
+    size: int,
+) -> None:
+    """Validate options shared by synthetic and real-image cohort builders."""
+    unknown_adapters = sorted(set(adapters) - set(_ADAPTERS))
+    if not adapters or unknown_adapters:
+        detail = ", ".join(unknown_adapters) if unknown_adapters else "none selected"
+        raise ValueError(f"invalid adapters: {detail}")
+    unknown_schemes = sorted(set(dwt_schemes) - _DWT_SCHEMES)
+    if unknown_schemes:
+        raise ValueError(f"unknown DWT-DCT schemes: {', '.join(unknown_schemes)}")
+    unknown_attacks = sorted(set(attacks) - _ATTACKS)
+    if unknown_attacks:
+        raise ValueError(f"unknown attacks: {', '.join(unknown_attacks)}")
+    if size < 256 or size % 16:
+        raise ValueError("size must be at least 256 and divisible by 16")
+
+
 def trustmark_available() -> bool:
     """Return whether the optional TrustMark package can be imported."""
     from remove_ai_watermarks.trustmark_detector import is_available
@@ -87,7 +108,8 @@ def _package_version(name: str) -> str:
         return "unavailable"
 
 
-def _dependencies() -> dict[str, str]:
+def benchmark_dependencies() -> dict[str, str]:
+    """Return versions of dependencies that can affect cohort artifacts."""
     return {
         "numpy": _package_version("numpy"),
         "pillow": _package_version("pillow"),
@@ -149,12 +171,14 @@ def _carrier(spec: CarrierSpec, *, size: int = 512) -> Image.Image:
     raise ValueError(f"unknown carrier {spec.name!r}")
 
 
-def _save(image: Image.Image, path: Path) -> Path:
+def save_rgb_png(image: Image.Image, path: Path) -> Path:
+    """Write one cohort artifact as an RGB PNG and return its path."""
     image.convert("RGB").save(path, format="PNG")
     return path
 
 
-def _attack(image: Image.Image, attack: AttackName) -> Image.Image:
+def attack_image(image: Image.Image, attack: AttackName) -> Image.Image:
+    """Apply one deterministic robustness transform to an image."""
     image = image.convert("RGB")
     if attack == "jpeg-q90":
         buffer = io.BytesIO()
@@ -163,7 +187,10 @@ def _attack(image: Image.Image, attack: AttackName) -> Image.Image:
         with Image.open(buffer) as decoded:
             return decoded.convert("RGB").copy()
     if attack == "resize-75":
-        reduced = image.resize((384, 384), Image.Resampling.LANCZOS)
+        reduced = image.resize(
+            (round(image.width * 0.75), round(image.height * 0.75)),
+            Image.Resampling.LANCZOS,
+        )
         return reduced.resize(image.size, Image.Resampling.LANCZOS)
     if attack == "crop-5":
         margin_x = round(image.width * 0.05)
@@ -173,7 +200,8 @@ def _attack(image: Image.Image, attack: AttackName) -> Image.Image:
     raise ValueError(f"unknown attack {attack!r}")
 
 
-def _embed_dwt_dct(image: Image.Image, scheme: str) -> Image.Image:
+def embed_dwt_dct(image: Image.Image, scheme: str) -> Image.Image:
+    """Embed one production DWT-DCT pattern into an image."""
     import cv2
     import numpy as np
 
@@ -200,7 +228,8 @@ def _embed_dwt_dct(image: Image.Image, scheme: str) -> Image.Image:
     return Image.fromarray(cv2.cvtColor(marked_bgr, cv2.COLOR_BGR2RGB), "RGB")
 
 
-def _trustmark_runtime() -> Any:
+def trustmark_runtime() -> Any:
+    """Load the TrustMark encoder and remover used by cohort builders."""
     if not trustmark_available():
         raise RuntimeError("TrustMark cohort requested but the trustmark extra is unavailable")
 
@@ -217,7 +246,7 @@ def _relative(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _row(
+def benchmark_row(
     *,
     root: Path,
     case_id: str,
@@ -234,6 +263,7 @@ def _row(
     seed: int,
     expected: str,
 ) -> dict[str, Any]:
+    """Build one strict benchmark-manifest row for a generated artifact."""
     return {
         "schema_version": SCHEMA_VERSION,
         "case_id": case_id,
@@ -257,7 +287,8 @@ def _row(
     }
 
 
-def _attack_parameters(attack: AttackName) -> dict[str, Any]:
+def attack_parameters(attack: AttackName) -> dict[str, Any]:
+    """Return the exact parameters represented by an attack name."""
     if attack == "jpeg-q90":
         values: dict[str, Any] = {"quality": 90, "subsampling": 0}
     elif attack == "resize-75":
@@ -275,16 +306,17 @@ def _append_hard_negative(
     adapter: AdapterName,
     source_revision: str,
     dependencies: dict[str, str],
+    size: int,
 ) -> None:
     spec = CarrierSpec("hard-checker", 101)
-    path = artifacts / "hard-checker.png"
+    path = artifacts / f"hard-checker--{size}px.png"
     if not path.exists():
-        _save(_carrier(spec), path)
+        save_rgb_png(_carrier(spec, size=size), path)
     rows.append(
-        _row(
+        benchmark_row(
             root=root,
-            case_id=f"{adapter}--hard-checker--clean",
-            pair_id=f"{adapter}--hard-checker",
+            case_id=f"{adapter}--hard-checker--{size}px--clean",
+            pair_id=f"{adapter}--hard-checker--{size}px",
             adapter=adapter,
             arm="hard_negative",
             state="clean",
@@ -293,14 +325,14 @@ def _append_hard_negative(
             source_revision=source_revision,
             transform_name="synthetic-carrier",
             transform_revision=RECIPE_VERSION,
-            parameters={"carrier": spec.name, "dependencies": dependencies},
+            parameters={"carrier": spec.name, "size": [size, size], "dependencies": dependencies},
             seed=spec.seed,
             expected="not_detected",
         )
     )
 
 
-def _append_dwt_rows(
+def append_dwt_rows(
     rows: list[dict[str, Any]],
     *,
     root: Path,
@@ -310,14 +342,27 @@ def _append_dwt_rows(
     attacks: Sequence[AttackName],
     source_revision: str,
     dependencies: dict[str, str],
+    size: int,
+    carrier_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    clean_transform_name: str = "synthetic-carrier",
+    clean_transform_revision: str = RECIPE_VERSION,
+    attack_transform_revision: str = RECIPE_VERSION,
 ) -> None:
+    """Append matched DWT-DCT cases for prepared carrier images."""
     for spec, clean in carriers:
-        clean_path = _save(clean, artifacts / f"{spec.name}--clean.png")
+        clean_path = save_rgb_png(clean, artifacts / f"{spec.name}--{size}px--clean.png")
         for scheme in schemes:
-            pair_id = f"dwt-dct--{scheme}--{spec.name}"
-            base_parameters = {"scheme": scheme, "carrier": spec.name, "dependencies": dependencies}
+            pair_id = f"dwt-dct--{scheme}--{spec.name}--{size}px"
+            base_parameters = {
+                "scheme": scheme,
+                "carrier": spec.name,
+                "size": [size, size],
+                "dependencies": dependencies,
+            }
+            if carrier_metadata is not None:
+                base_parameters["source"] = dict(carrier_metadata[spec.name])
             rows.append(
-                _row(
+                benchmark_row(
                     root=root,
                     case_id=f"{pair_id}--clean",
                     pair_id=pair_id,
@@ -327,17 +372,17 @@ def _append_dwt_rows(
                     path=clean_path,
                     reference=clean_path,
                     source_revision=source_revision,
-                    transform_name="synthetic-carrier",
-                    transform_revision=RECIPE_VERSION,
+                    transform_name=clean_transform_name,
+                    transform_revision=clean_transform_revision,
                     parameters=base_parameters,
                     seed=spec.seed,
                     expected="not_detected",
                 )
             )
-            marked = _embed_dwt_dct(clean, scheme)
-            marked_path = _save(marked, artifacts / f"{spec.name}--dwt-{scheme}--marked.png")
+            marked = embed_dwt_dct(clean, scheme)
+            marked_path = save_rgb_png(marked, artifacts / f"{spec.name}--{size}px--dwt-{scheme}--marked.png")
             rows.append(
-                _row(
+                benchmark_row(
                     root=root,
                     case_id=f"{pair_id}--marked",
                     pair_id=pair_id,
@@ -355,12 +400,12 @@ def _append_dwt_rows(
                 )
             )
             for attack in attacks:
-                attacked_path = _save(
-                    _attack(marked, attack),
-                    artifacts / f"{spec.name}--dwt-{scheme}--{attack}.png",
+                attacked_path = save_rgb_png(
+                    attack_image(marked, attack),
+                    artifacts / f"{spec.name}--{size}px--dwt-{scheme}--{attack}.png",
                 )
                 rows.append(
-                    _row(
+                    benchmark_row(
                         root=root,
                         case_id=f"{pair_id}--{attack}",
                         pair_id=pair_id,
@@ -371,15 +416,15 @@ def _append_dwt_rows(
                         reference=clean_path,
                         source_revision=source_revision,
                         transform_name=f"dwt-dct-embed-then-{attack}",
-                        transform_revision=RECIPE_VERSION,
-                        parameters=base_parameters | _attack_parameters(attack),
+                        transform_revision=attack_transform_revision,
+                        parameters=base_parameters | attack_parameters(attack),
                         seed=spec.seed,
                         expected="unresolved",
                     )
                 )
 
 
-def _append_trustmark_rows(
+def append_trustmark_rows(
     rows: list[dict[str, Any]],
     *,
     root: Path,
@@ -388,21 +433,30 @@ def _append_trustmark_rows(
     attacks: Sequence[AttackName],
     source_revision: str,
     dependencies: dict[str, str],
+    size: int,
+    carrier_metadata: Mapping[str, Mapping[str, Any]] | None = None,
+    clean_transform_name: str = "synthetic-carrier",
+    clean_transform_revision: str = RECIPE_VERSION,
+    attack_transform_revision: str = RECIPE_VERSION,
 ) -> None:
-    runtime = _trustmark_runtime()
+    """Append matched TrustMark cases for prepared carrier images."""
+    runtime = trustmark_runtime()
     for spec, clean in carriers:
-        clean_path = artifacts / f"{spec.name}--clean.png"
+        clean_path = artifacts / f"{spec.name}--{size}px--clean.png"
         if not clean_path.exists():
-            _save(clean, clean_path)
-        pair_id = f"trustmark--p-schema1--{spec.name}"
+            save_rgb_png(clean, clean_path)
+        pair_id = f"trustmark--p-schema1--{spec.name}--{size}px"
         base_parameters = {
             "variant": "P",
             "schema": 1,
             "carrier": spec.name,
+            "size": [size, size],
             "dependencies": dependencies,
         }
+        if carrier_metadata is not None:
+            base_parameters["source"] = dict(carrier_metadata[spec.name])
         rows.append(
-            _row(
+            benchmark_row(
                 root=root,
                 case_id=f"{pair_id}--clean",
                 pair_id=pair_id,
@@ -412,8 +466,8 @@ def _append_trustmark_rows(
                 path=clean_path,
                 reference=clean_path,
                 source_revision=source_revision,
-                transform_name="synthetic-carrier",
-                transform_revision=RECIPE_VERSION,
+                transform_name=clean_transform_name,
+                transform_revision=clean_transform_revision,
                 parameters=base_parameters,
                 seed=spec.seed,
                 expected="not_detected",
@@ -421,9 +475,9 @@ def _append_trustmark_rows(
         )
         payload = format(spec.seed, "061b")
         marked = runtime.encode(clean, payload, MODE="binary")
-        marked_path = _save(marked, artifacts / f"{spec.name}--trustmark-p--marked.png")
+        marked_path = save_rgb_png(marked, artifacts / f"{spec.name}--{size}px--trustmark-p--marked.png")
         rows.append(
-            _row(
+            benchmark_row(
                 root=root,
                 case_id=f"{pair_id}--marked",
                 pair_id=pair_id,
@@ -441,12 +495,12 @@ def _append_trustmark_rows(
             )
         )
         for attack in attacks:
-            attacked_path = _save(
-                _attack(marked, attack),
-                artifacts / f"{spec.name}--trustmark-p--{attack}.png",
+            attacked_path = save_rgb_png(
+                attack_image(marked, attack),
+                artifacts / f"{spec.name}--{size}px--trustmark-p--{attack}.png",
             )
             rows.append(
-                _row(
+                benchmark_row(
                     root=root,
                     case_id=f"{pair_id}--{attack}",
                     pair_id=pair_id,
@@ -457,18 +511,18 @@ def _append_trustmark_rows(
                     reference=clean_path,
                     source_revision=source_revision,
                     transform_name=f"trustmark-embed-then-{attack}",
-                    transform_revision=RECIPE_VERSION,
-                    parameters=base_parameters | _attack_parameters(attack),
+                    transform_revision=attack_transform_revision,
+                    parameters=base_parameters | attack_parameters(attack),
                     seed=spec.seed,
                     expected="unresolved",
                 )
             )
-        removed_path = _save(
+        removed_path = save_rgb_png(
             runtime.remove_watermark(marked),
-            artifacts / f"{spec.name}--trustmark-p--removed.png",
+            artifacts / f"{spec.name}--{size}px--trustmark-p--removed.png",
         )
         rows.append(
-            _row(
+            benchmark_row(
                 root=root,
                 case_id=f"{pair_id}--removed",
                 pair_id=pair_id,
@@ -494,31 +548,23 @@ def build_cohort(
     carriers: Sequence[CarrierSpec] = tuple(CarrierSpec(name, seed) for name, seed in DEFAULT_CARRIERS),
     dwt_schemes: Sequence[str] = DEFAULT_DWT_SCHEMES,
     attacks: Sequence[AttackName] = DEFAULT_ATTACKS,
+    size: int = 512,
 ) -> Path:
     """Build and validate a new local cohort directory, returning its manifest."""
     if output_dir.exists():
         raise FileExistsError(f"output directory already exists: {output_dir}")
-    unknown_adapters = sorted(set(adapters) - set(_ADAPTERS))
-    if not adapters or unknown_adapters:
-        detail = ", ".join(unknown_adapters) if unknown_adapters else "none selected"
-        raise ValueError(f"invalid adapters: {detail}")
-    unknown_schemes = sorted(set(dwt_schemes) - _DWT_SCHEMES)
-    if unknown_schemes:
-        raise ValueError(f"unknown DWT-DCT schemes: {', '.join(unknown_schemes)}")
-    unknown_attacks = sorted(set(attacks) - _ATTACKS)
-    if unknown_attacks:
-        raise ValueError(f"unknown attacks: {', '.join(unknown_attacks)}")
+    validate_cohort_options(adapters, dwt_schemes, attacks, size)
 
     output_dir.mkdir(parents=True)
     artifacts = output_dir / "artifacts"
     artifacts.mkdir()
     rows: list[dict[str, Any]] = []
     source_revision = _source_revision()
-    dependencies = _dependencies()
-    carrier_images = tuple((spec, _carrier(spec)) for spec in carriers)
+    dependencies = benchmark_dependencies()
+    carrier_images = tuple((spec, _carrier(spec, size=size)) for spec in carriers)
 
     if "dwt-dct" in adapters:
-        _append_dwt_rows(
+        append_dwt_rows(
             rows,
             root=output_dir,
             artifacts=artifacts,
@@ -527,6 +573,7 @@ def build_cohort(
             attacks=attacks,
             source_revision=source_revision,
             dependencies=dependencies,
+            size=size,
         )
         _append_hard_negative(
             rows,
@@ -535,9 +582,10 @@ def build_cohort(
             adapter="dwt-dct",
             source_revision=source_revision,
             dependencies=dependencies,
+            size=size,
         )
     if "trustmark" in adapters:
-        _append_trustmark_rows(
+        append_trustmark_rows(
             rows,
             root=output_dir,
             artifacts=artifacts,
@@ -545,6 +593,7 @@ def build_cohort(
             attacks=attacks,
             source_revision=source_revision,
             dependencies=dependencies,
+            size=size,
         )
         _append_hard_negative(
             rows,
@@ -553,6 +602,7 @@ def build_cohort(
             adapter="trustmark",
             source_revision=source_revision,
             dependencies=dependencies,
+            size=size,
         )
 
     manifest = output_dir / "manifest.jsonl"
@@ -565,6 +615,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True, help="new local cohort directory")
     parser.add_argument(
+        "--size",
+        type=int,
+        default=512,
+        help="square carrier side, at least 256 and divisible by 16 (default: 512)",
+    )
+    parser.add_argument(
         "--adapter",
         action="append",
         choices=_ADAPTERS,
@@ -574,7 +630,11 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
-        manifest = build_cohort(args.output_dir, adapters=tuple(args.adapters or _ADAPTERS))
+        manifest = build_cohort(
+            args.output_dir,
+            adapters=tuple(args.adapters or _ADAPTERS),
+            size=args.size,
+        )
     except (FileExistsError, ImportError, OSError, RuntimeError, ValueError) as exc:
         parser.error(str(exc))
     log.info("Wrote validated benchmark cohort to %s", manifest)

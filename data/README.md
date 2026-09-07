@@ -19,7 +19,8 @@ data/
                   Reusable full-pipeline evaluation selection
   evaluations/
     engine-selection/
-                  Prompt-matched AI content matrix for deterministic auto-engine research
+                  Prompt-matched, publication-cleared AI content matrix for
+                  deterministic auto-engine and watermark benchmark research
     fidelity/     Evaluation instructions and hand-verified ground truth
     video-synthid-oracle.csv
                   Reproducible full-clip Gemini SynthID verdicts

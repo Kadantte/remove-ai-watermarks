@@ -179,7 +179,8 @@ def _case_identity(record: ResultRecord) -> tuple[object, ...]:
     )
 
 
-def _nearest_rank(ordered: Sequence[float], quantile: float) -> float:
+def nearest_rank(ordered: Sequence[float], quantile: float) -> float:
+    """Return a nearest-rank percentile from values sorted in ascending order."""
     if not ordered:
         raise ValueError("cannot calculate a percentile without measurements")
     return ordered[max(0, math.ceil(quantile * len(ordered)) - 1)]
@@ -191,9 +192,31 @@ def _timing_stats(adapter: str, phase: TimingPhase, values: list[float]) -> dict
         "adapter": adapter,
         "phase": phase,
         "n": len(ordered),
-        "p50_ms": _nearest_rank(ordered, 0.50),
-        "p90_ms": _nearest_rank(ordered, 0.90),
+        "p50_ms": nearest_rank(ordered, 0.50),
+        "p90_ms": nearest_rank(ordered, 0.90),
         "max_ms": ordered[-1],
+    }
+
+
+def _artifact_status_summary(group: Sequence[ResultRecord]) -> dict[str, int]:
+    artifacts: dict[str, set[str]] = defaultdict(set)
+    for record in group:
+        row = record.data
+        artifact = cast("dict[str, Any]", row["artifact"])
+        detection = cast("dict[str, Any]", row["detection"])
+        artifacts[str(artifact["sha256"])].add(str(detection["status"]))
+    counts: dict[str, int] = dict.fromkeys(DETECTOR_STATUSES, 0)
+    unstable = 0
+    for statuses in artifacts.values():
+        if len(statuses) != 1:
+            unstable += 1
+            continue
+        counts[next(iter(statuses))] += 1
+    return {
+        "unique_artifacts": len(artifacts),
+        "observations": len(group),
+        **counts,
+        "unstable": unstable,
     }
 
 
@@ -209,35 +232,122 @@ def _detection_groups(records: Sequence[ResultRecord], *, include_transform: boo
 
     summaries: list[dict[str, Any]] = []
     for identity, group in sorted(grouped.items()):
-        artifacts: dict[str, set[str]] = defaultdict(set)
-        for record in group:
-            row = record.data
-            artifact = cast("dict[str, Any]", row["artifact"])
-            detection = cast("dict[str, Any]", row["detection"])
-            artifacts[str(artifact["sha256"])].add(str(detection["status"]))
-        counts: dict[str, int] = dict.fromkeys(DETECTOR_STATUSES, 0)
-        unstable = 0
-        for statuses in artifacts.values():
-            if len(statuses) != 1:
-                unstable += 1
-                continue
-            counts[next(iter(statuses))] += 1
         summary: dict[str, Any] = {
             "adapter": identity[0],
             "state": identity[1],
         }
         if include_transform:
             summary["transform"] = identity[2]
-        summary.update(
-            {
-                "unique_artifacts": len(artifacts),
-                "observations": len(group),
-                **counts,
-                "unstable": unstable,
-            }
-        )
+        summary.update(_artifact_status_summary(group))
         summaries.append(summary)
     return summaries
+
+
+def _detection_groups_by_source_field(
+    records: Sequence[ResultRecord],
+    *,
+    field: str,
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[ResultRecord]] = defaultdict(list)
+    for record in records:
+        row = record.data
+        transform = cast("dict[str, Any]", row["transform"])
+        parameters = cast("dict[str, Any]", transform["parameters"])
+        source = parameters.get("source")
+        if not isinstance(source, dict):
+            continue
+        value = cast("dict[str, object]", source).get(field)
+        if not isinstance(value, str) or not value:
+            continue
+        grouped[(str(row["adapter"]), str(row["state"]), value)].append(record)
+
+    summaries: list[dict[str, Any]] = []
+    for (adapter, state, value), group in sorted(grouped.items()):
+        summaries.append(
+            {
+                "adapter": adapter,
+                "state": state,
+                field: value,
+                **_artifact_status_summary(group),
+            }
+        )
+    return summaries
+
+
+def _watermark_profile(parameters: Mapping[str, Any]) -> str | None:
+    scheme = parameters.get("scheme")
+    if isinstance(scheme, str) and scheme:
+        return scheme
+    variant = parameters.get("variant")
+    schema = parameters.get("schema")
+    if isinstance(variant, str) and variant and isinstance(schema, int) and not isinstance(schema, bool):
+        return f"{variant}/schema-{schema}"
+    return None
+
+
+def _detection_groups_by_profile(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[ResultRecord]] = defaultdict(list)
+    for record in records:
+        row = record.data
+        transform = cast("dict[str, Any]", row["transform"])
+        parameters = cast("dict[str, Any]", transform["parameters"])
+        profile = _watermark_profile(parameters)
+        if profile is not None:
+            grouped[(str(row["adapter"]), str(row["state"]), profile)].append(record)
+    return [
+        {
+            "adapter": adapter,
+            "state": state,
+            "profile": profile,
+            **_artifact_status_summary(group),
+        }
+        for (adapter, state, profile), group in sorted(grouped.items())
+    ]
+
+
+def _attack_transition_groups(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
+    marked: dict[tuple[str, str], set[str]] = defaultdict(set)
+    attacked: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    for record in records:
+        row = record.data
+        state = str(row["state"])
+        if state not in ("marked", "attacked"):
+            continue
+        adapter = str(row["adapter"])
+        pair_id = str(row["pair_id"])
+        detection = cast("dict[str, Any]", row["detection"])
+        status = str(detection["status"])
+        if state == "marked":
+            marked[(adapter, pair_id)].add(status)
+        else:
+            transform = cast("dict[str, Any]", row["transform"])
+            attacked[(adapter, pair_id, str(transform["name"]))].add(status)
+
+    grouped: dict[tuple[str, str], dict[str, int]] = defaultdict(
+        lambda: {"retained": 0, "lost": 0, "gained": 0, "still_not_detected": 0, "unmeasured": 0}
+    )
+    for (adapter, pair_id, transform), attacked_statuses in attacked.items():
+        counts = grouped[(adapter, transform)]
+        marked_statuses = marked.get((adapter, pair_id), set())
+        if len(marked_statuses) != 1 or len(attacked_statuses) != 1:
+            counts["unmeasured"] += 1
+            continue
+        before = next(iter(marked_statuses))
+        after = next(iter(attacked_statuses))
+        transition = {
+            ("detected", "detected"): "retained",
+            ("detected", "not_detected"): "lost",
+            ("not_detected", "detected"): "gained",
+            ("not_detected", "not_detected"): "still_not_detected",
+        }.get((before, after))
+        if transition is None:
+            counts["unmeasured"] += 1
+        else:
+            counts[transition] += 1
+    return [
+        {"adapter": adapter, "transform": transform, "pairs": sum(counts.values()), **counts}
+        for (adapter, transform), counts in sorted(grouped.items())
+    ]
 
 
 def _removal_groups(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
@@ -323,7 +433,7 @@ def _fidelity_groups(records: Sequence[ResultRecord]) -> list[dict[str, Any]]:
                 **counts,
                 "identical": identical,
                 "finite_psnr": len(psnr_values),
-                "p50_psnr_db": _nearest_rank(sorted(psnr_values), 0.50) if psnr_values else None,
+                "p50_psnr_db": nearest_rank(sorted(psnr_values), 0.50) if psnr_values else None,
             }
         )
     return summaries
@@ -392,6 +502,10 @@ def summarize(records: Sequence[ResultRecord]) -> dict[str, Any]:
         "inputs": inputs,
         "detection": _detection_groups(records, include_transform=False),
         "detection_by_transform": _detection_groups(records, include_transform=True),
+        "detection_by_profile": _detection_groups_by_profile(records),
+        "attack_transitions": _attack_transition_groups(records),
+        "detection_by_source_provider": _detection_groups_by_source_field(records, field="provider"),
+        "detection_by_content_stratum": _detection_groups_by_source_field(records, field="content_stratum"),
         "removal": _removal_groups(records),
         "fidelity": _fidelity_groups(records),
         "timing": timing,
@@ -407,18 +521,27 @@ def summarize(records: Sequence[ResultRecord]) -> dict[str, Any]:
     }
 
 
-def _cell(value: object) -> str:
+def markdown_cell(value: object, *, missing: str = "-") -> str:
+    """Render one escaped Markdown table cell."""
     if value is None:
-        return "-"
+        return missing
     if isinstance(value, float):
         return f"{value:.2f}"
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-def _table(columns: Sequence[tuple[str, str]], rows: Sequence[Mapping[str, Any]]) -> list[str]:
+def markdown_table(
+    columns: Sequence[tuple[str, str]],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    missing: str = "-",
+) -> list[str]:
+    """Render a Markdown table from named columns and mapping rows."""
     header = "| " + " | ".join(label for _, label in columns) + " |"
     separator = "| " + " | ".join("---" for _ in columns) + " |"
-    body = ["| " + " | ".join(_cell(row.get(key)) for key, _ in columns) + " |" for row in rows]
+    body = [
+        "| " + " | ".join(markdown_cell(row.get(key), missing=missing) for key, _ in columns) + " |" for row in rows
+    ]
     return [header, separator, *body]
 
 
@@ -436,7 +559,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
         "",
         "## Detection by state",
         "",
-        *_table(
+        *markdown_table(
             (
                 ("adapter", "Adapter"),
                 ("state", "State"),
@@ -453,7 +576,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
         "",
         "## Detection by transform",
         "",
-        *_table(
+        *markdown_table(
             (
                 ("adapter", "Adapter"),
                 ("state", "State"),
@@ -468,13 +591,97 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
             cast("list[dict[str, Any]]", summary["detection_by_transform"]),
         ),
         "",
-        "## Post-removal observation",
-        "",
     ]
+    by_profile = cast("list[dict[str, Any]]", summary["detection_by_profile"])
+    if by_profile:
+        lines.extend(
+            [
+                "## Detection by watermark profile",
+                "",
+                *markdown_table(
+                    (
+                        ("adapter", "Adapter"),
+                        ("state", "State"),
+                        ("profile", "Profile"),
+                        ("unique_artifacts", "Unique artifacts"),
+                        ("detected", "Detected"),
+                        ("not_detected", "Not detected"),
+                        ("unavailable", "Unavailable"),
+                        ("error", "Error"),
+                        ("unstable", "Unstable"),
+                    ),
+                    by_profile,
+                ),
+                "",
+            ]
+        )
+    attack_transitions = cast("list[dict[str, Any]]", summary["attack_transitions"])
+    if attack_transitions:
+        lines.extend(
+            [
+                "## Attack transitions from the matched marked case",
+                "",
+                *markdown_table(
+                    (
+                        ("adapter", "Adapter"),
+                        ("transform", "Attack transform"),
+                        ("pairs", "Pairs"),
+                        ("retained", "Detected -> detected"),
+                        ("lost", "Detected -> not detected"),
+                        ("gained", "Not detected -> detected"),
+                        ("still_not_detected", "Not detected -> not detected"),
+                        ("unmeasured", "Unmeasured"),
+                    ),
+                    attack_transitions,
+                ),
+                "",
+                (
+                    "A gained detection is a threshold-crossing observation after the transform, not evidence "
+                    "that the attack added a watermark."
+                ),
+                "",
+            ]
+        )
+    source_group_columns = (
+        ("adapter", "Adapter"),
+        ("state", "State"),
+        ("unique_artifacts", "Unique artifacts"),
+        ("detected", "Detected"),
+        ("not_detected", "Not detected"),
+        ("unavailable", "Unavailable"),
+        ("error", "Error"),
+        ("unstable", "Unstable"),
+    )
+    by_provider = cast("list[dict[str, Any]]", summary["detection_by_source_provider"])
+    if by_provider:
+        lines.extend(
+            [
+                "## Detection by source provider",
+                "",
+                *markdown_table(
+                    (*source_group_columns[:2], ("provider", "Provider"), *source_group_columns[2:]), by_provider
+                ),
+                "",
+            ]
+        )
+    by_stratum = cast("list[dict[str, Any]]", summary["detection_by_content_stratum"])
+    if by_stratum:
+        lines.extend(
+            [
+                "## Detection by content stratum",
+                "",
+                *markdown_table(
+                    (*source_group_columns[:2], ("content_stratum", "Content stratum"), *source_group_columns[2:]),
+                    by_stratum,
+                ),
+                "",
+            ]
+        )
+    lines.extend(["## Post-removal observation", ""])
     removal = cast("list[dict[str, Any]]", summary["removal"])
     if removal:
         lines.extend(
-            _table(
+            markdown_table(
                 (
                     ("adapter", "Adapter"),
                     ("unique_artifacts", "Unique artifacts"),
@@ -493,7 +700,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
     timing = cast("list[dict[str, Any]]", summary["timing"])
     if timing:
         lines.extend(
-            _table(
+            markdown_table(
                 (
                     ("adapter", "Adapter"),
                     ("phase", "Phase"),
@@ -518,7 +725,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
             "",
             "## Fidelity",
             "",
-            *_table(
+            *markdown_table(
                 (
                     ("adapter", "Adapter"),
                     ("state", "State"),
@@ -549,7 +756,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
         lines.extend(
             [
                 "",
-                *_table(
+                *markdown_table(
                     (("case_id", "Unstable case"), ("adapter", "Adapter"), ("statuses", "Statuses")),
                     [row | {"statuses": ", ".join(row["statuses"])} for row in unstable],
                 ),
@@ -559,7 +766,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
         lines.extend(
             [
                 "",
-                *_table(
+                *markdown_table(
                     (("case_id", "Expected-result mismatch"), ("adapter", "Adapter"), ("status", "Observed")),
                     mismatches,
                 ),
@@ -569,7 +776,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
         lines.extend(
             [
                 "",
-                *_table(
+                *markdown_table(
                     (
                         ("case_id", "Non-result case"),
                         ("adapter", "Adapter"),
@@ -586,7 +793,7 @@ def render_markdown(summary: Mapping[str, Any], *, title: str = "Watermark bench
             "",
             "## Inputs",
             "",
-            *_table(
+            *markdown_table(
                 (("path", "Result file"), ("sha256", "SHA-256"), ("observations", "Observations")),
                 cast("list[dict[str, Any]]", summary["inputs"]),
             ),

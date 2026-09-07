@@ -27,6 +27,7 @@ explicitly names a tracked canonical result.
 | `visible_removal_audit.py` | Audit visible-removal results over a local corpus. |
 | `watermark_benchmark.py` | Run hash-pinned image cases while keeping detection, removal observation, and fidelity separate. |
 | `watermark_benchmark_report.py` | Aggregate repeated benchmark results with artifact-aware counts and separate cold/warm timing. |
+| `watermark_benchmark_resources.py` | Measure fresh-process wall time and absolute peak RSS for benchmark manifests. |
 
 ## Calibration and corpus preparation
 
@@ -46,6 +47,7 @@ explicitly names a tracked canonical result.
 | `visible_recall_sample.py` | Build an unbiased blinded sample for recall measurement. |
 | `visible_sheets.py` | Build blinded contact sheets for relaxation candidates. |
 | `watermark_benchmark_cohort.py` | Build the deterministic synthetic DWT-DCT and TrustMark cohort consumed by `watermark_benchmark.py`. |
+| `watermark_benchmark_real_cohort.py` | Build a publication-cleared, provider-paired and content-stratified real-image cohort. |
 | `retrain_photo_classify.py` | CPU-retrain the 2026-08-31 photo heads from a sha256-keyed cache pack, no images. |
 | `publish_photo_classify_hf.py` | Upload the photo-classify card and freeze weights to Hugging Face `wiltodelta/raiw-photo-classify`. Manual; the Action `publish-photo-classify-hf.yml` is the write-token path. |
 | `verify_engine_selection_fixtures.py` | Verify hashes, dimensions, and prompt pairing in the tracked auto-engine content matrix. |
@@ -82,3 +84,5 @@ running the sync command without `--check` is the explicit snapshot update.
 
 `_plain_console.py` provides plain-text fallbacks for Rich output, and
 `_text_eval.py` contains normalization helpers shared by text-evaluation scripts.
+`engine_selection_manifest.py` owns the content-matrix schema and validation
+shared by its integrity check and the real-image benchmark builder.
