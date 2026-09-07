@@ -149,9 +149,11 @@ _SDXL_ZIMAGE_STRENGTH_BY_VENDOR: dict[str, float] = {
 # guidance 5.0, four effective steps, seed 0). Flat per-vendor values derived
 # by the same worst-clean-plus-one-spread rule as the other profiles:
 #
-# - OpenAI: first-clean boundaries 0.06 / 0.06 / 0.075 on three fixtures ->
-#   0.075 + (0.075 - 0.06) = 0.09. Chroma1's OpenAI floor is BELOW qwen's
-#   0.07675 while its matched-strength fidelity beats qwen on every metric.
+# - OpenAI: the initial three fixtures first cleared at 0.06 / 0.06 / 0.075,
+#   but two withheld carriers expanded the first-clean boundary to 0.10625 and
+#   0.1375. Explicit Chroma therefore uses the measured worst-clean rung 0.1375.
+#   Qwen cleared both withheld carriers at its existing 0.07675 operating point,
+#   so auto routes OpenAI to Qwen rather than paying Chroma's higher fidelity cost.
 # - Microsoft InvisMark: paint-1 (0.06, 0.08], paint-2 <= 0.04, paint-3
 #   (0.06, 0.08] -> 0.08 + (0.08 - 0.04) = 0.12, rounded up to the measured
 #   rung 0.125, oracle-verified clean on both worst sources. BELOW qwen's 0.15.
@@ -165,7 +167,7 @@ _SDXL_ZIMAGE_STRENGTH_BY_VENDOR: dict[str, float] = {
 #   0.10 + (0.10 - 0.03) = 0.17. ABOVE qwen's 0.1; the floors exist because
 #   Chroma1's boundaries scatter wider than qwen's, not because the engine is
 #   worse per unit strength.
-CHROMA_ZIMAGE_OPENAI_STRENGTH = 0.09
+CHROMA_ZIMAGE_OPENAI_STRENGTH = 0.1375
 CHROMA_ZIMAGE_MICROSOFT_STRENGTH = 0.125
 CHROMA_ZIMAGE_GOOGLE_STRENGTH = 0.40
 CHROMA_ZIMAGE_META_STRENGTH = 0.17
@@ -199,11 +201,10 @@ _ALIASES = {
 
 # The deterministic per-cohort selection policy: which profile wins on which vendor, from the
 # 2026-08-29/30 four-cohort calibration (docs/chroma1-engine-research.md).
-# chroma-zimage has lower floors AND better matched-strength fidelity on OpenAI
-# and Microsoft; qwen-zimage wins on Google and Meta. Unknown stays on qwen
-# (the shipped default, conservative).
+# chroma-zimage has the lower measured Microsoft floor. qwen-zimage wins on
+# OpenAI, Google, and Meta. Unknown stays on qwen (the shipped default,
+# conservative).
 _ENGINE_BY_VENDOR: dict[str, str] = {
-    "openai": CHROMA_ZIMAGE_PROFILE,
     "microsoft": CHROMA_ZIMAGE_PROFILE,
 }
 

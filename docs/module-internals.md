@@ -1520,8 +1520,8 @@ The current profiles are `qwen-zimage` (the default), `sdxl-zimage`,
 `qwen` and `default` were removed rather than kept as a CPU path, and are
 rejected rather than aliased onward. `auto` is a deterministic per-cohort
 selection policy:
-chroma-zimage for OpenAI and Microsoft, qwen-zimage for Google, Meta, and
-unknown. It does not run a learned router or classify the image's genre.
+chroma-zimage for Microsoft, qwen-zimage for OpenAI, Google, Meta, and unknown.
+It does not run a learned router or classify the image's genre.
 
 `qwen-zimage` normally resolves global denoise from image area for unknown content.
 Measured provider cohorts bypass that curve with flat operating points. The values,
@@ -1789,8 +1789,7 @@ Diffusers truncation trap sdxl-zimage documents). There is no Canny
 conditioning: the floors were measured on a plain strength pass.
 
 The flat vendor floors (`CHROMA_ZIMAGE_*_STRENGTH` in watermark_profiles):
-OpenAI 0.09 and Microsoft 0.125 (both BELOW qwen's, with better
-matched-strength fidelity), Google 0.40 for zero-face content / 0.125 when
+OpenAI 0.1375 and Microsoft 0.125, Google 0.40 for zero-face content / 0.125 when
 faces are detected (a content-adaptive arm from the clean face-count split
 in the calibration: both text cards need 0.25, both face fixtures clear at
 0.12, so the YuNet detector -- already loaded for the face stage -- routes
@@ -1806,9 +1805,11 @@ does not ship: first-cleans from 0.03 to 0.10 form a continuum,
 `flat_ratio` overlaps the hard and easy clusters, and a high-flat
 easy-arm would misroute the harvest-1 portraits. The worst seed-0
 first-clean is still 0.10; botanical seeds 1 and 2 stay DETECTED at
-that rung, which is the margin the 0.17 floor already holds. OpenAI stays on the flat 0.09 floor: extra SynthID-positive carriers
-clear at or below 0.06, including a 2-face file, and only the 9-face
-grid needs 0.075 (seed-stable on 0, 1, 2 via openai.com/research/verify).
+that rung, which is the margin the 0.17 floor already holds. A later OpenAI
+holdout invalidated the flat 0.09 conclusion: two carriers first cleared under
+Chroma at 0.10625 and 0.1375, while qwen-zimage cleared both at its existing
+0.07675 operating point. Explicit Chroma now uses 0.1375 and `auto` routes
+OpenAI to qwen-zimage.
 
 A separate content-balanced check on 2026-08-31 tested the exact production
 OpenAI and Meta floors over 19 prompt-matched image strata per provider. Each

@@ -59,10 +59,10 @@ rungs were checked ascending and stopped at the first clean verdict.
 | Meta | gen_studio_mug 1600x1600 | 0.03 | 0.045 |
 | Meta | gen_text_poster 1600x1600 | -- | <=0.03 |
 
-Derived operating points by the shipped rule (worst first-clean boundary plus
-one observed cross-source spread):
+Derived operating points from this initial calibration (the OpenAI value was
+superseded by the 2026-09-07 holdout below):
 
-- **OpenAI: 0.09** (0.075 + (0.075 - 0.06)). Against qwen-zimage 0.07675 and
+- **OpenAI: 0.09, superseded.** (0.075 + (0.075 - 0.06)). Against qwen-zimage 0.07675 and
   sdxl-zimage 0.15. The typography boundary (0.05, 0.06] is seed-stable across
   seeds 0, 1, 2.
 - **Meta: 0.17** (0.10 + (0.10 - 0.03)), oracle-verified clean on the worst
@@ -284,8 +284,8 @@ Generation script: `scripts/chroma_preship_validation.py`; outputs under
 Engine quality is cohort-dependent, and after measuring all four cohorts the
 split is even and sharp:
 
-- On OpenAI-provenance content Chroma1 is better at every measured fidelity
-  axis at its floor (0.09 vs 0.07675), for comparable money.
+- On the initial OpenAI fixtures Chroma1 was better at the then-current floor,
+  but the later holdout moved that floor to 0.1375 and changed the router decision.
 - On Microsoft InvisMark content Chroma1 is better at every measured fidelity
   axis at a LOWER floor than qwen (0.125 vs 0.15).
 - On Meta Content Seal Chroma1 needs 1.7x the strength (0.17 vs 0.1) and loses
@@ -473,8 +473,28 @@ The committed seed-0 first-clean is not a fluke.
 2-face extra also clears at 0.06, and only the 9-face grid needs 0.075.
 That is not a YuNet split: `face_count > 0` would over-strengthen the
 2-face file, and a high face-count cutoff would be one fixture. The
-spread (0.075 - 0.06) is already absorbed by the shipped 0.09 floor.
+spread (0.075 - 0.06) was absorbed by the 0.09 floor for this calibration,
+but the later holdout below invalidated that operating point.
 Images API generations remain non-carriers (C2PA only).
+
+## OpenAI hard-carrier holdout (2026-09-07)
+
+Two additional withheld OpenAI SynthID carriers expanded the Chroma boundary.
+Each original was a positive pixel control after metadata-only stripping, so the
+verdict did not depend on C2PA provenance. Their Chroma first-clean strengths were
+0.10625 and 0.1375. Both Qwen outputs were clean at the existing 0.07675 operating
+point.
+
+The paired fidelity read was mixed rather than a reason to pay Chroma's higher
+denoise. On the one detected face, Qwen had higher identity cosine (0.835 vs
+0.821), lower face LPIPS (0.108 vs 0.118), and lower whole-image LPIPS (0.095 vs
+0.125); Chroma retained more local texture and had slightly higher SSIM. On the
+second carrier Qwen again had slightly lower LPIPS (0.104 vs 0.109), while Chroma
+had higher SSIM and PSNR.
+
+This invalidates both the 0.09 explicit Chroma floor and the OpenAI auto route.
+Explicit `chroma-zimage` now uses the measured worst-clean rung 0.1375. `auto`
+uses `qwen-zimage` for OpenAI at 0.07675; Chroma remains the Microsoft route.
 
 ## Content-balanced engine selection check (2026-08-31)
 

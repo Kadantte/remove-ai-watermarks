@@ -1011,7 +1011,7 @@ def test_chroma_zimage_strength_uses_measured_flat_floors():
 
     assert normalize_profile("chroma_zimage") == "chroma-zimage"
     assert resolve_strength(None, "openai", "chroma-zimage") == pytest.approx(CHROMA_ZIMAGE_OPENAI_STRENGTH)
-    assert pytest.approx(0.09) == CHROMA_ZIMAGE_OPENAI_STRENGTH
+    assert pytest.approx(0.1375) == CHROMA_ZIMAGE_OPENAI_STRENGTH
     assert resolve_strength(None, "microsoft", "chroma-zimage") == pytest.approx(CHROMA_ZIMAGE_MICROSOFT_STRENGTH)
     assert pytest.approx(0.125) == CHROMA_ZIMAGE_MICROSOFT_STRENGTH
     assert resolve_strength(None, "google", "chroma-zimage") == pytest.approx(CHROMA_ZIMAGE_GOOGLE_STRENGTH)
@@ -1046,7 +1046,7 @@ def test_chroma_zimage_inherits_the_shared_stages_and_only_swaps_the_global():
 def test_chroma_requested_steps_compensate_for_the_diffusers_truncation():
     from remove_ai_watermarks._internal.chroma_zimage_pipeline import CHROMA_STEPS, requested_steps
 
-    for strength in (0.09, 0.125, 0.17, 0.40):
+    for strength in (0.1375, 0.125, 0.17, 0.40):
         steps = requested_steps(CHROMA_STEPS, strength)
         assert int(steps * strength) >= CHROMA_STEPS
         assert int(CHROMA_STEPS * strength) < CHROMA_STEPS
@@ -1295,7 +1295,7 @@ def test_chroma_google_face_content_gets_the_lower_adaptive_floor():
     # No face_count hint: conservative (flat floor).
     assert resolve_strength(None, "google", "chroma-zimage") == pytest.approx(0.40)
     # Other vendors ignore face_count: the split is Google-SynthID-specific.
-    assert resolve_strength(None, "openai", "chroma-zimage", face_count=5) == pytest.approx(0.09)
+    assert resolve_strength(None, "openai", "chroma-zimage", face_count=5) == pytest.approx(0.1375)
     assert resolve_strength(None, "meta", "chroma-zimage", face_count=5) == pytest.approx(0.17)
     # An explicit strength still wins over the adaptive arm.
     assert resolve_strength(0.20, "google", "chroma-zimage", face_count=17) == pytest.approx(0.20)
@@ -1305,7 +1305,7 @@ def test_chroma_google_face_content_gets_the_lower_adaptive_floor():
 
 def test_auto_profile_routes_to_the_measured_engine_per_vendor():
     """--pipeline auto picks the engine the four-cohort calibration supports:
-    chroma-zimage for OpenAI/Microsoft, qwen-zimage for Google/Meta/unknown."""
+    chroma-zimage for Microsoft, qwen-zimage for OpenAI/Google/Meta/unknown."""
     from remove_ai_watermarks._internal.watermark_profiles import (
         CHROMA_ZIMAGE_PROFILE,
         QWEN_ZIMAGE_PROFILE,
@@ -1314,7 +1314,7 @@ def test_auto_profile_routes_to_the_measured_engine_per_vendor():
     )
 
     assert normalize_profile("auto") == "auto"
-    assert resolve_auto_profile("openai") == CHROMA_ZIMAGE_PROFILE
+    assert resolve_auto_profile("openai") == QWEN_ZIMAGE_PROFILE
     assert resolve_auto_profile("microsoft") == CHROMA_ZIMAGE_PROFILE
     assert resolve_auto_profile("google") == QWEN_ZIMAGE_PROFILE
     assert resolve_auto_profile("meta") == QWEN_ZIMAGE_PROFILE
@@ -1323,8 +1323,7 @@ def test_auto_profile_routes_to_the_measured_engine_per_vendor():
 
 
 def test_auto_profile_strength_uses_the_resolved_engine_floors(tmp_path, monkeypatch):
-    """After auto resolves to chroma-zimage for an OpenAI file, the strength
-    must be chroma's 0.09 floor, not qwen's 0.07675."""
+    """Auto resolves OpenAI to Qwen and uses its oracle-verified 0.07675 floor."""
     from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover
 
     _mock_watermark_runtime_deps(monkeypatch)
@@ -1340,14 +1339,13 @@ def test_auto_profile_strength_uses_the_resolved_engine_floors(tmp_path, monkeyp
 
     remover.remove_watermark(source, vendor="openai")
 
-    # Auto resolved to chroma-zimage for the OpenAI vendor.
-    assert remover.model_profile == "chroma-zimage"
+    assert remover.model_profile == "qwen-zimage"
     _, kwargs = runtime.run.call_args
-    assert kwargs["strength"] == pytest.approx(0.09)
+    assert kwargs["strength"] == pytest.approx(0.07675)
 
 
-def test_auto_profile_text_manifest_uses_the_measured_chroma_engine_once(tmp_path, monkeypatch):
-    """A manifest does not override the researched OpenAI-to-Chroma decision."""
+def test_auto_profile_text_manifest_uses_the_measured_qwen_engine_once(tmp_path, monkeypatch):
+    """A manifest does not override the researched OpenAI-to-Qwen decision."""
     from remove_ai_watermarks._internal.text_restoration import VerifiedTextLine, VerifiedTextManifest
     from remove_ai_watermarks._internal.watermark_remover import WatermarkRemover
 
@@ -1363,6 +1361,6 @@ def test_auto_profile_text_manifest_uses_the_measured_chroma_engine_once(tmp_pat
 
     remover.remove_watermark(source, vendor="openai", text_manifest=manifest)
 
-    assert remover.model_profile == "chroma-zimage"
+    assert remover.model_profile == "qwen-zimage"
     assert runtime.run.call_count == 1
     assert runtime.run.call_args.kwargs["text_manifest"] is manifest

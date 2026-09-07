@@ -105,7 +105,7 @@ frozen text regions would keep the watermark
 
 `qwen-zimage` is the default profile. `sdxl-zimage` and `chroma-zimage` keep
 the same face stage and swap the global model. `auto` picks chroma-zimage for
-OpenAI and Microsoft provenance and qwen-zimage otherwise. All are CUDA only.
+Microsoft provenance and qwen-zimage otherwise. All are CUDA only.
 Qwen and SDXL condition the global stage on a canny edge map, which preserves
 structure but not identity or exact texture. Chroma1 is a plain strength pass
 without Canny.
@@ -251,8 +251,9 @@ established for that stage.
 2026-08-29/30 across the four vendor oracles (full record:
 [`chroma1-engine-research.md`](chroma1-engine-research.md)):
 
-- OpenAI: `0.09` (below qwen's `0.07675` is false economy neither way -- the
-  matched-strength fidelity favors Chroma1 on this cohort);
+- OpenAI: `0.1375`. Two withheld carriers expanded the Chroma first-clean
+  boundary beyond the original `0.09` policy while qwen-zimage cleared both at
+  its existing `0.07675` operating point;
 - Microsoft InvisMark: `0.125` (below qwen's `0.15`);
 - Google: `0.40` for zero-face content (above qwen's `0.27`; at this floor the
   regeneration destroys dense text and collapses face identity -- the tradeoff
@@ -275,7 +276,7 @@ are certified at a fixed seed. The live resolver is
 | `qwen-zimage` | CUDA only, large model stack, and limited broad certification across seeds and content. |
 | `sdxl-zimage` | CUDA only. Its strength ladder is flat per vendor, not a resolution curve, because flat values are what was measured. |
 | `chroma-zimage` | CUDA only. Higher Google and Meta floors than qwen; Google face content uses 0.125 instead of 0.40. |
-| `auto` | CUDA only. Routes OpenAI and Microsoft to chroma-zimage and everything else to qwen-zimage. |
+| `auto` | CUDA only. Routes Microsoft to chroma-zimage and everything else to qwen-zimage. |
 
 Only manually verified `vae-glyphs` is an optional production stage, and it is
 experimental rather than a default.

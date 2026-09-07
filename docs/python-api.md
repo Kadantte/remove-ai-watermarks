@@ -729,7 +729,7 @@ engine = InvisibleEngine(pipeline="sdxl-zimage")
 
 The `qwen-zimage` extra is required for every profile, including `auto`: each
 concrete engine runs the same DiffSynth Z-Image face stage. `pipeline="auto"`
-selects chroma-zimage for OpenAI and Microsoft provenance and qwen-zimage
+selects chroma-zimage for Microsoft provenance and qwen-zimage
 otherwise, after the vendor is known and before strength resolution.
 
 The opt-in verified-text stage uses the same `text_manifest` argument as the CLI:

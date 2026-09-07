@@ -482,8 +482,8 @@ The same option exists on `all` and `batch`, and as
 | --- | --- |
 | `qwen-zimage` | Default. Qwen-Image-2512 global pass plus a SAM-masked Z-Image face stage |
 | `sdxl-zimage` | The same recipe and face stage on an SDXL global pass, at a higher denoise |
-| `chroma-zimage` | The same face stage on an Apache-2.0 Chroma1 global pass, with lower OpenAI and Microsoft floors and higher Google and Meta floors |
-| `auto` | Pick the engine from provenance: chroma-zimage for OpenAI and Microsoft, qwen-zimage for Google, Meta, and unknown |
+| `chroma-zimage` | The same face stage on an Apache-2.0 Chroma1 global pass; explicit OpenAI use needs a higher floor than qwen-zimage |
+| `auto` | Pick the engine from provenance: chroma-zimage for Microsoft, qwen-zimage for OpenAI, Google, Meta, and unknown |
 
 **All four are CUDA-only.** There is no CPU or MPS profile for invisible-watermark
 removal. The former `controlnet`, `sdxl`, `qwen` and `default` profiles were removed
