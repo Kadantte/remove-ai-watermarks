@@ -458,6 +458,14 @@ the vendor someone is inspecting the specific content, which is a leak in
 the opposite direction of a removal tool's purpose. A registry guard test
 pins the published-API set so ecosystem changes surface consciously.
 
+The external-benchmark item is closed as a licensing verdict:
+[the investigation](external-benchmark-licensing.md) verified ETI and
+W-Bench against their primary sources - ETI carries no license anywhere and
+stays off limits without organizer permission, while the W-Bench dataset is
+MIT with the VINE code non-commercial. A W-Bench profile is therefore
+buildable on our kernel; whether it is worth building is a scoping decision
+that now has no legal dependency.
+
 The same full-clip gate runs the public metadata-only path against its real MP4
 and verifies unchanged file size, decoded frames, stream properties, and AAC
 packets. A separate synthetic large-`mdat` test rejects full-source

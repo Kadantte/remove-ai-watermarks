@@ -54,4 +54,5 @@ The current behavior is defined by the code, tests, README, and user guides.
 - [VideoSeal temporal evaluation](videoseal-temporal-evaluation.md) (per-frame scores, aggregation matrix, and crf decay on synthetic and real clips)
 - [Watermark forgery study](watermark-forgery-study.md) (four-state model and double-embedding: the last writer wins under both oracles)
 - [C2PA resolution research](c2pa-resolution-research.md) (measured resolver contracts, the privacy gradient, and the decision to never resolve over the network)
+- [External benchmark licensing](external-benchmark-licensing.md) (ETI license-blocked, W-Bench dataset MIT with non-commercial code, verified 2026-09-07)
 - [Chroma1 engine research](chroma1-engine-research.md)
