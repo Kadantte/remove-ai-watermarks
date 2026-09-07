@@ -1,11 +1,12 @@
 name: Distribute on release
 
 # Fans a published GitHub Release out to the channels that need a nudge.
-# PyPI is handled by publish.yml. This workflow event-drives the three channels
+# PyPI is handled by publish.yml. This workflow event-drives the four channels
 # that would otherwise be manual:
 #   - Homebrew tap: rewrite the formula's url + sha256 to the new sdist.
 #   - HF Space: factory-rebuild the version already pinned in the Space repo.
 #   - ComfyUI: sync, test, and publish the node against the exact library release.
+#   - ClawHub: publish the agent skill when its own version moved.
 # All wait for the freshly published sdist to appear on PyPI first, since the
 # Release event fires in parallel with publish.yml's upload.
 
@@ -105,6 +106,44 @@ jobs:
           )
           print("HF Space factory rebuild triggered")
           PY
+
+  clawhub:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish the agent skill when its version moved
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLAWHUB_TOKEN:-}" ]; then
+            echo "CLAWHUB_TOKEN secret is not set; skipping ClawHub publish."
+            exit 0
+          fi
+          npm install --silent --no-fund --no-audit clawhub
+          skill_version=$(python3 - <<'PY'
+          import re
+          text = open("skills/remove-ai-watermarks/SKILL.md", encoding="utf-8").read()
+          m = re.search(r"(?m)^  version:\s*[\"']?([^\"'\s]+)", text)
+          assert m, "skill version missing"
+          print(m.group(1))
+          PY
+          )
+          clawhub login --token "$CLAWHUB_TOKEN" >/dev/null
+          published=$(clawhub inspect remove-ai-watermarks --file SKILL.md 2>/dev/null \
+            | python3 -c 'import re,sys; t=sys.stdin.read(); m=re.search(r"(?m)^  version:\s*[\"'"'"']?([^\"'"'"'\s]+)", t); print(m.group(1) if m else "")' || true)
+          if [ "$published" = "$skill_version" ]; then
+            echo "ClawHub already at $skill_version; nothing to publish."
+            exit 0
+          fi
+          echo "ClawHub at ${published:-<none>}; publishing skill $skill_version."
+          clawhub skill publish skills/remove-ai-watermarks \
+            --slug remove-ai-watermarks \
+            --name "Remove AI Watermarks" \
+            --version "$skill_version" \
+            --changelog "Agent skill sync for the ${{ github.event.release.name || github.ref_name }} release."
+          echo "Submitted; ClawHub runs security scans before the listing goes public."
 
   comfyui:
     needs: resolve

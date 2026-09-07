@@ -147,9 +147,16 @@ After the skill files reach the default branch:
 - SkillsMP can index the public `SKILL.md`;
 - Claude Code users can run `/plugin marketplace add wiltodelta/remove-ai-watermarks`.
 
-ClawHub and the Claude community marketplace need a separate authenticated
-publish. Do not treat those listings as complete until the live catalog shows
-the skill.
+ClawHub publishes automatically: the `clawhub` job in `distribute.yml` compares
+the `SKILL.md` version with the published one on every GitHub Release and
+submits an update when they differ. It needs the `CLAWHUB_TOKEN` secret
+(create a dedicated token on clawhub.ai, not a device-flow one); without
+the secret the job skips with a notice. A submission waits for ClawHub
+security scans before the listing goes public, so a green job means
+"submitted", not "listed": verify the live catalog before calling the
+surface complete. The Claude community marketplace remains a manual,
+authenticated publish. Do not treat any listing as complete until the live
+catalog shows the skill.
 
 ## Release verification
 
