@@ -498,6 +498,46 @@ For explicit Chroma, the face-bearing cohort rule gives
 clean three times on both holdout carriers. `auto` uses `qwen-zimage` for OpenAI
 at 0.07675; Chroma remains the Microsoft route.
 
+## OpenAI zero-face holdout: the content split does not survive real carriers (2026-09-08)
+
+The `OpenAI content-adaptive expansion` section above closed on fixtures whose
+zero-face members first cleared at 0.06 and whose single face member cleared at
+0.075, which made faces look like the harder class by a comfortable margin. Three
+further withheld zero-face carriers were laddered on the public verifier to test
+that, all at ~1.57 MP so image area could not explain a difference, and all
+confirmed zero-face by `detect_faces` (YuNet) - the same detector the adaptive
+arms gate on, not a downscaled Haar pass, which disagreed with it in both
+directions on these very files.
+
+Every regeneration was produced by the deployed worker at seed 0, `mode=all`,
+explicit `chroma-zimage`, and every verdict below is the verifier's separate
+`SynthID detected` line with `Content Credentials not detected` alongside it, so
+no metadata could substitute for a pixel result. Each carrier's own
+metadata-stripped, RGB-identical control returned a positive verdict first.
+
+| carrier | detected through | first clean | interval |
+|---|---|---|---|
+| zero-face A | 0.03 | **0.045** | (0.03, 0.045] |
+| zero-face B | 0.045 | **0.06** | (0.045, 0.06] |
+| zero-face C | 0.10 | **0.11** | (0.10, 0.11] |
+
+Carrier C was laddered 0.02, 0.03, 0.045, 0.06, 0.075, 0.09, 0.10 detected, then
+0.11 and 0.125 clean.
+
+Applying the standard rule to the zero-face class gives
+`0.11 + (0.11 - 0.045) = 0.175`; the face class gives
+`0.1375 + (0.1375 - 0.075) = 0.20`. **The two classes differ by 0.025 while the
+spread within each is 0.065 and 0.0625** - a split would key on a variable that
+explains roughly a quarter of the variation it leaves behind. The flat 0.20 floor
+therefore stands, and it now covers both content classes rather than only the
+face-bearing carriers it was derived from.
+
+The methodological point generalises beyond this cohort. The fixture-only view of
+zero-face OpenAI content spanned 0.015; the real carriers span 0.065, four times
+wider. A narrow fixture spread produces a small worst-clean-plus-one-spread margin
+and a false impression of homogeneity, and it was that impression - not any
+measurement - that made a face split look justified here twice.
+
 ## Content-balanced engine selection check (2026-08-31)
 
 The earlier tables were intentionally carrier-focused and therefore small. A

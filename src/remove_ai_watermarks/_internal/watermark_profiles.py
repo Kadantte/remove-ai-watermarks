@@ -156,6 +156,14 @@ _SDXL_ZIMAGE_STRENGTH_BY_VENDOR: dict[str, float] = {
 #   operating point, verified clean three times on both withheld carriers.
 #   Qwen cleared both withheld carriers at its existing 0.07675 operating point,
 #   so auto routes OpenAI to Qwen rather than paying Chroma's higher fidelity cost.
+#   Three further withheld carriers, all zero-face by the same YuNet detector the
+#   adaptive arms gate on, first cleared at 0.045 / 0.06 / 0.11 -> a zero-face
+#   operating point of 0.11 + (0.11 - 0.045) = 0.175, which 0.20 already covers.
+#   That is why OpenAI keeps a FLAT floor: the two content classes differ by 0.025
+#   while the spread WITHIN each is 0.065 and 0.0625, so a face split would key on
+#   a variable explaining a quarter of the variation it leaves behind. The earlier
+#   fixture-only view (0.06 / 0.06 / 0.075, spread 0.015) understated the real
+#   scatter fourfold; do not re-derive this cohort from fixtures alone.
 # - Microsoft InvisMark: paint-1 (0.06, 0.08], paint-2 <= 0.04, paint-3
 #   (0.06, 0.08] -> 0.08 + (0.08 - 0.04) = 0.12, rounded up to the measured
 #   rung 0.125, oracle-verified clean on both worst sources. BELOW qwen's 0.15.
