@@ -57,3 +57,15 @@ questions with pinned local evidence, and W-Bench would add its
 editing-profile attack axis (regeneration, image-to-video). The ETI profile
 stays closed until the organizers grant a license; nothing in this
 repository should download or derive from it meanwhile.
+
+One protocol detail is worth keeping as a candidate, not a commitment: the
+ETI scoring program runs submissions through median blur and JPEG
+compression before decoding, so an attack only wins if the watermark stays
+dead under ordinary handling - that filter separates fragile
+adversarial-perturbation removals from structural ones. Our removal paths
+are structural (fill, regeneration), so no driving question exists today;
+if removal durability under platform re-encoding ever becomes one, the
+follow-up is an hour-sized handling arm over removed-state artifacts in the
+existing cohorts. Participant attack code was never published (the release
+carries attacked images and metrics only), so there is no implementation to
+learn from even where reading would be lawful.
