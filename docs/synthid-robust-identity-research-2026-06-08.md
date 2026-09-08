@@ -1,5 +1,10 @@
 # Deep research: SynthID-safe face-identity recovery for SDXL (2026-06-08)
 
+> Research archive. This dated follow-up records evidence available during the
+> study. It is not the current command reference. The `instantid` and `photomaker`
+> extras it discusses, the `--restore-faces` flag, and their modules were all removed
+> from the library afterwards.
+
 **Stats:** {"angles": 6, "sourcesFetched": 28, "claimsExtracted": 104, "claimsVerified": 25, "confirmed": 19, "killed": 6, "afterSynthesis": 6, "urlDupes": 1, "budgetDropped": 7, "agentCalls": 111}
 
 ## Summary
@@ -49,7 +54,7 @@ Arc2Face README verbatim: 'Arc2Face is built upon SD1.5' with stable-diffusion-v
 **Vote:** 3-0 on the narrow factual claims (SDXL base + CLIP-G encoder)
 
 
-GitHub README explicitly instructs 'Download the pretrained base models from SDXL-base-1.0 and CLIP-G' (CLIP-ViT-bigG-14-laion2B-39B-b160k). Neither README nor arXiv 2406.07209 mention ArcFace/InsightFace/antelopev2/buffalo_l. Architecturally descended from IP-Adapter (CLIP-image-embedding family), not from FaceID/InstantID/PhotoMaker-V2. Verifier caveat (high confidence on the license-narrow claim, medium on suitability): CLIP-image face-ID accuracy ~80.95% vs specialized face recognition ~87.61% — license-safe but probably not identity-grade for portraits. Confidence is medium because the suitability claim for raiw.cc face-identity use case has not been validated empirically.
+GitHub README explicitly instructs 'Download the pretrained base models from SDXL-base-1.0 and CLIP-G' (CLIP-ViT-bigG-14-laion2B-39B-b160k). Neither README nor arXiv 2406.07209 mention ArcFace/InsightFace/antelopev2/buffalo_l. Architecturally descended from IP-Adapter (CLIP-image-embedding family), not from FaceID/InstantID/PhotoMaker-V2. Verifier caveat (high confidence on the license-narrow claim, medium on suitability): CLIP-image face-ID accuracy ~80.95% vs specialized face recognition ~87.61% — license-safe but probably not identity-grade for portraits. Confidence is medium because suitability for portrait and group-photo inputs has not been validated empirically.
 
 - https://proceedings.iclr.cc/paper_files/paper/2025/file/ed4df1609bf7d8602435341c9ce2ab5f-Paper-Conference.pdf
 - https://github.com/MS-Diffusion/MS-Diffusion
@@ -83,7 +88,7 @@ Six claims were refuted in adversarial verification, two of them load-bearing: A
 
 ## Open questions
 
-- Does MS-Diffusion (or any CLIP-image-embedding SDXL adapter) achieve usable face-identity fidelity on the raiw.cc input distribution (portraits + group photos), or is the ArcFace gap (~7 pp face-ID accuracy) visually disqualifying — and can a face-specific CLIP fine-tune close it?
+- Does MS-Diffusion (or any CLIP-image-embedding SDXL adapter) achieve usable face-identity fidelity on portraits and group photos, or is the ArcFace gap (~7 pp face-ID accuracy) visually disqualifying — and can a face-specific CLIP fine-tune close it?
 - Has InstantX (or any community fork) actually shipped an InstantID variant retrained on a commercially-licensed face embedder since the maintainer's 2024 commitment, and if so what is its identity-fidelity vs the antelopev2 original?
 - What is the exact diffusers-0.38 compat status of InstantID, MS-Diffusion, and PuLID-FLUX inference scripts — does any need a fork the way PhotoMaker-V1 did, and if so what specifically breaks?
 - Is there a single-pipeline multi-subject identity-preservation method (mask-guided regional ID-adapters, multi-subject InstantID, MS-Diffusion multi-subject mode) that handles group photos without the per-face crop+composite patchwork that PhotoMaker-V2 produced?
@@ -146,8 +151,9 @@ on Modal A100 in two phases:
    - v3 (tighter ellipse 0.32*bw x 0.42*bh + per-channel mean color match to
      local cleaned canvas + softer feather): patchwork visually softened; faces
      still read as studio portraits inserted into the scene, not as people
-     shot in the scene. Single portrait identity drifted (tatsunari -> "round
-     Asian male" vs original's thin face).
+     shot in the scene. Single portrait identity drifted (the single-portrait
+     fixture regenerated as a generic "round Asian male" vs the original's thin
+     face).
 2. **Phase 2: InstantID img2img on cleaned crop.** Switched to the upstream
    `pipeline_stable_diffusion_xl_instantid_img2img` (downloaded at first use
    from raw.githubusercontent.com; requires `trust_remote_code=True`). Same
@@ -161,7 +167,7 @@ on Modal A100 in two phases:
    `ip_adapter_scale=1.0`, `controlnet_scale=1.0` brought identity closer to
    original but introduced more "SDXL gloss / clean skin" aesthetic.
 
-**Net finding for raiw.cc (load-bearing).** The fundamental issue is structural:
+**Net finding for a commercial deployment (load-bearing).** The fundamental issue is structural:
 ArcFace encodes "this person's general look" (ethnicity, gender, basic facial
 geometry) at 512 dimensions; SDXL decodes that embedding into pixels with the
 inherent SDXL aesthetic (smooth skin, symmetric pores, AI-photoreal look).

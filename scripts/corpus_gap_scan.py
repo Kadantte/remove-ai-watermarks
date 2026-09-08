@@ -14,12 +14,12 @@ Two jobs in one pass:
    first audit naively scanned the first megabyte.
 
 This is how new detector gaps get found (it is what surfaced the JPEG-EXIF
-``{"AIGC":{...}}`` form). Re-run after collecting a fresh corpus batch.
+``{"AIGC":{...}}`` form). Re-run after collecting a fresh evaluation batch.
 
 Usage:
-    uv run python scripts/corpus_gap_scan.py --corpus data/spaces/originals
-    uv run python scripts/corpus_gap_scan.py --corpus data/spaces/originals \\
-        --report data/spaces/detector_report.csv
+    uv run python scripts/corpus_gap_scan.py --corpus .local-eval/originals
+    uv run python scripts/corpus_gap_scan.py --corpus .local-eval/originals \\
+        --report .local-eval/detector-report.csv
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def _row(rep) -> dict[str, str]:  # noqa: ANN001 (ProvenanceReport)
 @click.option(
     "--corpus",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
-    default=Path("data/spaces/originals"),
+    default=Path(".local-eval/originals"),
     show_default=True,
     help="Directory of images to scan (recursively).",
 )

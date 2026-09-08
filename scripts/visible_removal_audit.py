@@ -10,11 +10,16 @@ NOT sufficient (their NCC detector is fooled by a thin residual outline -- see
 CLAUDE.md). Treat a detector-clean Doubao/Jimeng as "detector passes"; visual
 residual is a separate check.
 
-Operates on gitignored data only (data/spaces/...); writes nothing tracked.
+Backend: for a REALISTIC quality audit pass ``--backend migan`` (the production
+fill), not ``cv2``. Removal SUCCESS (detector-clean) is backend-independent, so cv2
+is fine for a fast pass/fail sweep, but only migan/lama reflect the recovered-region
+quality a user actually gets. Run migan when validating the visible pipeline for real.
+
+Operates on gitignored local data only; writes nothing tracked.
 
     uv run python scripts/visible_removal_audit.py \
-        --corpus data/spaces/originals --out data/spaces/_visible_audit.csv \
-        --dataset-root data/spaces/_visible_datasets
+        --corpus .local-eval/originals --out .local-eval/visible-audit.csv \
+        --dataset-root .local-eval/visible-datasets
 """
 
 from __future__ import annotations
@@ -43,10 +48,16 @@ def _rel(p: Path, corpus: Path) -> str:
 
 @click.command()
 @click.option(
-    "--corpus", type=click.Path(exists=True, file_okay=False, path_type=Path), default=Path("data/spaces/originals")
+    "--corpus",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=Path(".local-eval/originals"),
 )
-@click.option("--out", type=click.Path(path_type=Path), default=Path("data/spaces/_visible_audit.csv"))
-@click.option("--dataset-root", type=click.Path(path_type=Path), default=Path("data/spaces/_visible_datasets"))
+@click.option("--out", type=click.Path(path_type=Path), default=Path(".local-eval/visible-audit.csv"))
+@click.option(
+    "--dataset-root",
+    type=click.Path(path_type=Path),
+    default=Path(".local-eval/visible-datasets"),
+)
 @click.option(
     "--paths-file",
     type=click.Path(exists=True, path_type=Path),
@@ -54,7 +65,14 @@ def _rel(p: Path, corpus: Path) -> str:
     help="Audit only these paths (one per line), skipping the full rglob.",
 )
 @click.option("--limit", type=int, default=0, help="Scan at most N files (0 = all).")
-def main(corpus: Path, out: Path, dataset_root: Path, paths_file: Path | None, limit: int) -> None:
+@click.option(
+    "--backend",
+    type=click.Choice(["auto", "cv2", "migan", "lama"]),
+    default="auto",
+    help="Fill backend for removal. Removal SUCCESS (detector-clean) is backend-independent; "
+    "cv2 is fastest for a bulk audit, migan/lama only change recovered-region quality.",
+)
+def main(corpus: Path, out: Path, dataset_root: Path, paths_file: Path | None, limit: int, backend: str) -> None:
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
     if paths_file is not None:
         files = [Path(s) for line in paths_file.read_text().splitlines() if (s := line.strip()) and Path(s).is_file()]
@@ -86,7 +104,7 @@ def main(corpus: Path, out: Path, dataset_root: Path, paths_file: Path | None, l
                     shutil.copy2(p, ddir / p.name)
                 # Remove, then re-detect with the SAME mark's detector.
                 try:
-                    cleaned, _ = mark.remove(img)
+                    cleaned, _ = mark.remove(img, backend=backend)
                     after = mark.detect(cleaned)
                 except Exception as exc:
                     log.warning("remove failed on %s (%s): %s", p.name, det.key, exc)

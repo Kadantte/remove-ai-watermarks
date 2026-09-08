@@ -1,0 +1,8 @@
+key,provider,watermark_type,path,status,verification,license
+sora,OpenAI Sora,visible moving mascot and wordmark,data/fixtures/visible/sora/provider-original.mp4,available,"Apache-2.0 upstream original; detected by Sora engine on 300/300 frames; C2PA claim names Sora and OpenAI/Truepic, with valid integrity and signature but an expired untrusted signer certificate",Apache-2.0
+veo,Google Veo,visible fixed text,data/fixtures/visible/veo/provider-original.mp4,available,"authenticated Google Flow Veo 3.1 Fast original; detected by Veo engine on 192/192 frames; valid C2PA and provider-confirmed SynthID",repository
+seedance,ByteDance Seedance,visible boxed AI label,,missing,"OpenRouter Seedance 2.0 Mini with watermark=true produced BytePlus C2PA but no visible boxed AI label; direct consumer original still needed",
+doubao,ByteDance Doubao,visible fixed text,,missing,no redistributable provider original found,
+dola,ByteDance Dola,visible fixed text,,missing,no redistributable provider original found,
+hailuo,MiniMax Hailuo AI,visible composite label,data/fixtures/visible/hailuo/provider-original.mp4,available,"authenticated Hailuo AI MiniMax H3 original downloaded with With Watermark selected; detected by Hailuo engine on 124/124 frames; TC260 AIGC label names MiniMax",repository
+kling,Kuaishou Kling AI,visible fixed logo and wordmark,data/fixtures/visible/kling/provider-original.mp4,available,"authenticated Kling AI VIDEO 3.0 original; detected by Kling engine on 121/121 frames; no locally readable provenance metadata",Kling AI terms; noncommercial fixture

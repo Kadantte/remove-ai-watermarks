@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import struct
+import zlib
 from pathlib import Path
 
 import cv2
@@ -10,21 +12,17 @@ import pytest
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-CORPUS_NEG_DIR = Path(__file__).resolve().parent.parent / "data" / "synthid_corpus" / "images" / "neg"
-
 
 @pytest.fixture
-def clean_photo() -> Path:
-    """A verified-negative real photo from the corpus neg/ set.
+def clean_photo(tmp_path: Path) -> Path:
+    """Create a deterministic image with no provenance metadata.
 
-    Used by the "non-AI image" assertions (no SynthID, verdict unknown). These
-    are real photos with no AI provenance, the ground truth for "must not false-
-    positive". Skips if the corpus is not checked out.
+    The assertions using this fixture exercise metadata and provenance behavior,
+    so a generated fixture is sufficient and avoids committing personal photos.
     """
-    files = sorted(CORPUS_NEG_DIR.glob("*")) if CORPUS_NEG_DIR.exists() else []
-    if not files:
-        pytest.skip("no corpus neg/ images present")
-    return files[0]
+    path = tmp_path / "clean-control.png"
+    Image.new("RGB", (128, 96), color=(90, 140, 190)).save(path)
+    return path
 
 
 @pytest.fixture
@@ -77,3 +75,22 @@ def tmp_clean_png(tmp_path: Path) -> Path:
     path = tmp_path / "clean.png"
     img.save(path, pnginfo=pnginfo)
     return path
+
+
+@pytest.fixture
+def tampered_chatgpt_png(tmp_path: Path) -> Path:
+    """Add valid PNG metadata after signing so the C2PA asset hash no longer matches."""
+    source = Path(__file__).resolve().parents[1] / "data" / "fixtures" / "provenance" / "chatgpt-1.png"
+    data = source.read_bytes()
+    iend = data.rfind(b"\x00\x00\x00\x00IEND")
+    assert iend >= 0
+
+    kind = b"tEXt"
+    payload = b"c2pa-test\x00benign post-signing metadata mutation"
+    chunk = (
+        struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    )
+    target = tmp_path / "tampered-chatgpt.png"
+    target.write_bytes(data[:iend] + chunk + data[iend:])
+    assert target.read_bytes() != data
+    return target

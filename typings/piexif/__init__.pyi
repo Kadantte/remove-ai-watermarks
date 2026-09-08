@@ -13,8 +13,11 @@ class ImageIFD:
     Make: int
     Artist: int
     ImageDescription: int
+    Orientation: int
 
-class ExifIFD: ...
+class ExifIFD:
+    UserComment: int
+
 class GPSIFD: ...
 
 def load(input_data: bytes | str, key_is_name: bool = ...) -> dict[str, Any]: ...

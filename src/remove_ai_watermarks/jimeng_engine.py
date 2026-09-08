@@ -1,17 +1,18 @@
-"""Jimeng / Dreamina visible watermark removal engine.
+"""Jimeng / Dreamina visible watermark detector/localizer.
 
 Jimeng (即梦AI, ByteDance) stamps generated images with a visible "★ 即梦AI" wordmark
 in the bottom-right corner -- a near-white semi-transparent overlay, the same overlay
 class as the Doubao text strip.
 
-Removal is **reverse-alpha blending** against a captured alpha map
-(``original = (wm - a*logo)/(1-a)``), always NCC-aligned to the actual mark plus a thin
-residual inpaint over the glyph footprint. This is one of the three text-mark engines
-that share :class:`remove_ai_watermarks._text_mark_engine.TextMarkEngine`; this module
+Detection matches the bundled glyph silhouette against the corner; removal is the
+shared **localize -> fill** (the glyph-bbox :meth:`footprint_mask` feeds
+``region_eraser``), NOT reverse-alpha. This module shares
+:class:`remove_ai_watermarks._text_mark_engine.TextMarkEngine` and
 supplies only Jimeng's tuned :class:`TextMarkConfig` (bottom-right corner,
-``assets/jimeng_alpha.png`` rebuilt by ``scripts/visible_alpha_solve.py`` from the gray
-capture). Jimeng images are also caught by the China TC260 AIGC metadata label, so this
-is the visible-mark *removal* path, not a new ``identify`` signal.
+``assets/jimeng_alpha.png`` -- the detection silhouette, rebuilt by
+``scripts/visible_alpha_solve.py`` from the gray capture). Jimeng images are also caught
+by the China TC260 AIGC metadata label. The visual detector also feeds
+``identify`` when metadata is absent.
 """
 # The module-level _alpha_template / _glyph_silhouette / _template_match_score below
 # are thin test-facing shims (imported by tests/), so pyright's src-only pass sees them
@@ -23,7 +24,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from remove_ai_watermarks import _text_mark_engine
-from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
+from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkEngine
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -41,21 +42,26 @@ TOPHAT_DELTA = 12
 
 # Shape-consistent detection. Threshold 0.45 cleanly separates real Jimeng marks
 # (>=0.81) from the Doubao strip (0.21), so the two ByteDance marks do not cross-fire.
+#
+# That separation holds at the STRICT threshold ONLY. Relaxed under provenance it
+# collapses: at the old shared 0.7 factor, many false additions were Doubao marks.
+# That was patched with a tighter 0.85
+# factor at the time; the competitive rival margin replaced it -- see below.
 DETECT_MIN_COVERAGE = 0.02
 DETECT_NCC_THRESHOLD = 0.45
 
-# Reverse-alpha geometry, emitted by scripts/visible_alpha_solve.py from the gray
-# capture at the captured width.
+# Back to the 0.70 default. The 0.85 patch (2026-07-18) existed only to blunt the
+# Doubao cross-fire by sacrificing recall; the competitive RIVAL MARGIN below
+# discriminates directly and passes real wordmarks at 100%, so the recall the patch
+# gave up is no longer the price of precision. See _rival_margin_ok.
+PROVENANCE_NCC_FACTOR = 0.7
+
+# Detection-silhouette geometry, emitted by scripts/visible_alpha_solve.py from the
+# gray capture at the captured width (sizes the silhouette for the detection match;
+# removal is the template-free glyph-bbox footprint mask).
 _ALPHA_NATIVE_WIDTH = 2048
-_ALPHA_LOGO_BGR: tuple[float, float, float] = (255.0, 255.0, 255.0)
-_ALPHA_WIDTH_FRAC = 0.2021  # asset width / image width -- the alignment scale seed
+_ALPHA_WIDTH_FRAC = 0.2021  # asset width / image width -- sizes the detection silhouette
 _ALPHA_HEIGHT_FRAC = 0.0576
-_ALPHA_MARGIN_RIGHT_FRAC = 0.0288
-_ALPHA_MARGIN_BOTTOM_FRAC = 0.0288
-_ALPHA_ALIGN_SEARCH = (0.90, 1.12, 23)
-_RESIDUAL_ALPHA_FLOOR = 0.05
-_RESIDUAL_DILATE = 5
-_RESIDUAL_INPAINT_RADIUS = 2
 
 _CONFIG = TextMarkConfig(
     name="Jimeng",
@@ -72,19 +78,12 @@ _CONFIG = TextMarkConfig(
     morph_open_size=5,
     detect_min_coverage=DETECT_MIN_COVERAGE,
     detect_ncc_threshold=DETECT_NCC_THRESHOLD,
+    provenance_ncc_factor=PROVENANCE_NCC_FACTOR,
+    rivals=("doubao_alpha.png",),
     alpha_width_frac=_ALPHA_WIDTH_FRAC,
     alpha_height_frac=_ALPHA_HEIGHT_FRAC,
-    alpha_margin_x_frac=_ALPHA_MARGIN_RIGHT_FRAC,
-    alpha_margin_bottom_frac=_ALPHA_MARGIN_BOTTOM_FRAC,
-    alpha_align_search=_ALPHA_ALIGN_SEARCH,
     min_gw=8,
-    alpha_logo_bgr=_ALPHA_LOGO_BGR,
-    residual_alpha_floor=_RESIDUAL_ALPHA_FLOOR,
-    residual_dilate=_RESIDUAL_DILATE,
-    residual_inpaint_radius=_RESIDUAL_INPAINT_RADIUS,
 )
-
-JimengDetection = TextMarkDetection
 
 
 def _alpha_template() -> NDArray[Any] | None:
@@ -97,13 +96,13 @@ def _glyph_silhouette() -> NDArray[Any] | None:
     return _text_mark_engine.glyph_silhouette(_CONFIG.asset_name)
 
 
-def _template_match_score(box_mask: NDArray[Any], image_width: int) -> float:
+def _template_match_score(box_mask: NDArray[Any], scale_base: int) -> float:
     """TM_CCOEFF_NORMED of the Jimeng glyph silhouette against ``box_mask``."""
-    return _text_mark_engine.template_match_score(box_mask, image_width, _CONFIG)
+    return _text_mark_engine.template_match_score(box_mask, scale_base, _CONFIG)
 
 
 class JimengEngine(TextMarkEngine):
-    """Remove the visible Jimeng "★ 即梦AI" watermark (locate -> mask -> reverse-alpha)."""
+    """Detect/localize the visible Jimeng "★ 即梦AI" watermark (locate -> mask; mask feeds the fill)."""
 
     def __init__(self) -> None:
         super().__init__(_CONFIG)

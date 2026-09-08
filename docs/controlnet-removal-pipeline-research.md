@@ -1,5 +1,13 @@
 # ControlNet-as-removal-pipeline research: can structure-conditioned regeneration scrub SynthID and keep text?
 
+> Research archive. This document records experiments, superseded defaults, and
+> deployment considerations from the time of the study. It does not define the
+> current CLI or Python API. See `README.md`, `docs/cli.md`, and
+> `docs/known-limitations.md` for current behavior. Everything it names on the
+> face-restoration path was removed after this study: the `--restore-faces` and
+> `--face-id` flags, the `instantid`, `photomaker` and `faceid` extras, and their
+> modules. So were the `controlnet`, `sdxl`, `qwen` and `default` profiles.
+
 Date: 2026-06-02. Source: a manual primary-source pass (WebSearch + WebFetch over the
 watermark-removal-attack and SDXL-ControlNet literature). Prompted by issue #35
 (@newideas99 / Jacob): "as we use SDXL even at low strength that kills small text ... Do you
@@ -50,8 +58,7 @@ content it protects. Controlnet is the text/structure PRESERVATION pipeline; rem
 is set by STRENGTH, separately calibrated, not by the pipeline choice.
 
 This section is the single consolidated reference for the controlnet pipeline's
-removal behavior. (Mirrored briefly in `docs/synthid.md` §5.5 and the CLAUDE.md
-controlnet / face_restore bullets, which point here.)
+removal behavior. (Mirrored briefly in `docs/synthid.md` §5.5, which points here.)
 
 ### What we measured (real gpt-image + Gemini originals)
 
@@ -72,8 +79,9 @@ enough yet barely touches flat fills. So the survivors FLIP by content type — 
 choice alone does not guarantee removal.
 
 **2. Seed non-determinism near threshold.** img2img uses a random seed unless `--seed`
-is passed, and there is no local SynthID detector to self-verify. The bracelet survived
-controlnet @0.15 in one run and CLEARED @0.15 in another (same pipeline+strength+res).
+is passed, and these geometries are outside the current local detector's scope.
+The bracelet survived controlnet @0.15 in one run and CLEARED @0.15 in another
+(same pipeline+strength+res).
 So a single clean run does NOT establish a strength as safe — characterizing a reliable
 floor needs a seed-repeatability sweep (N runs, varied seed), not one pass.
 
@@ -96,7 +104,7 @@ checked on one lucky image).
 
 ### Certified controlnet strength floors (Modal GPU sweep + oracle, 2026-06-04)
 
-Run via the isolated `raiw-controlnet-cert` Modal app (`raiw-app/modal_cert.py`):
+Run via an isolated Modal certification harness:
 controlnet, `restore_faces` OFF (it re-introduces SynthID), `--max-resolution 1536`,
 each image checked on ITS OWN vendor oracle (OpenAI -> openai.com/verify, Gemini -> the
 Gemini app; the two payloads are vendor-specific and never cross-checked):
@@ -109,11 +117,11 @@ Gemini app; the two payloads are vendor-specific and never cross-checked):
 - **OpenAI 0.20 transfers to prod as-is** (OpenAI removal is resolution-independent:
   the study clears it at 0.05 across 1024-1600).
 - **Gemini 0.30 is the floor at <= 1536 only.** Gemini is resolution-sensitive (study:
-  native 2816 likely needs >= 0.30 even on `default`), and **raiw.cc runs NATIVE**
-  (`max_resolution=0` in `modal_app.py`). So either CAP Gemini to <= 1536 in raiw.cc and
+  native 2816 likely needs >= 0.30 even on `default`). A native-resolution
+  deployment should either cap Gemini to <= 1536 and
   use 0.30, or run a native-resolution Gemini cert and expect a higher floor (~0.35+).
 
-### Recommendations for a removal pipeline (raiw.cc)
+### Recommendations for a removal pipeline
 
 - **Treat controlnet as PRESERVATION, not removal.** Choose it for text/structure content,
   `default` for photoreal; removal efficacy comes from STRENGTH in both.
@@ -137,8 +145,8 @@ Gemini app; the two payloads are vendor-specific and never cross-checked):
   but never recovered original identity precisely — every setting traded one problem
   for another. See `docs/synthid-robust-identity-research-2026-06-08.md`
   "Empirical follow-up" for the full sweep.
-- **No local SynthID detector exists** → the service can't self-verify; bake in strength
-  margin and periodic oracle spot-checks.
+- **No applicable local detector exists for these geometries** → the service
+  can't self-verify; bake in strength margin and periodic oracle spot-checks.
 - **Lesson:** visual-quality / face-identity recovery does NOT prove removal — only the
   oracle does, across MULTIPLE content types; never conclude from a partial result (the
   photoreal-only data first read as "controlnet shields, default removes"; the flat-graphic
@@ -205,7 +213,9 @@ on each tile. This mirrors the `_run_region_hires` insight (text needs MORE pixe
 regeneration so strokes exceed the VAE's ~8 px latent floor), but ctrlregen runs the regeneration
 at LOW res, the opposite. CtrlRegen's paper gives no resolution/tiling spec to contradict this.
 
-**Sources.** internal (`src/remove_ai_watermarks/noai/ctrlregen/engine.py`); resolution-omission
+**Sources.** the former internal
+`src/remove_ai_watermarks/_internal/ctrlregen/engine.py` (removed after this study);
+resolution-omission
 confirmed against https://arxiv.org/html/2410.05470v1
 
 ### Finding 5 — confidence: high
@@ -281,16 +291,17 @@ text-vs-scrub tension as an empirical question to measure, not assume.
 **Prototype (runs locally on 32 GB MPS — no dedicated GPU required):**
 
 Compute is NOT the bottleneck. On a 32 GB Apple-silicon machine (M5 here) native SDXL already
-runs entirely on MPS with no CPU fallback (~155 s at 1122x1402, verified — see `synthid.md` /
-CLAUDE.md). The prototype runs at **1024** (fewer pixels than that) with SDXL base + an SDXL
+runs entirely on MPS with no CPU fallback (~155 s at 1122x1402, verified 2026-05-31).
+The prototype runs at **1024** (fewer pixels than that) with SDXL base + an SDXL
 ControlNet + activations in **fp32** (MPS fp16 decodes to all-black NaN — issue #29 — confirmed
 on run 1 below; fp32 is the required default on mps/cpu) — fits the 32 GB budget with vae-tiling +
 attention-slicing; ~1-2 min/image, so a coarse sweep is a sub-hour background run. A dedicated GPU
 is needed ONLY for the separate
-native-large-Gemini (2816 px) case, which OOMs even without a ControlNet (that stays a raiw.cc
+native-large-Gemini (2816 px) case, which OOMs even without a ControlNet (that requires a
 GPU task). The genuine external dependency is NOT compute but the **manual SynthID oracle**:
-there is no local SynthID detector, so removal is verified by hand in the Gemini app
-("Verify with SynthID") per image, regardless of where the diffusion runs.
+these geometries are outside the current local detector's scope, so removal is
+verified by hand in the Gemini app ("Verify with SynthID") per image, regardless
+of where the diffusion runs.
 
 Runner: **`scripts/controlnet_sweep.py`** (built 2026-06-02) implements exactly this sweep —
 SDXL base 1.0 + an SDXL-native ControlNet img2img, one output per (control x strength x scale)
@@ -432,8 +443,9 @@ shielding risk; defer to a v2 after the single-canny path is dialed in.
 
 **Hard caveat:** every change that increases preservation (higher scale, denser canny, fuller window,
 softer edges) marginally REDUCES effective regeneration and so raises the chance the watermark
-survives -- exactly the shielding failure mode. There is no local SynthID detector, so each tuning
-change must be re-confirmed on the oracle. These are img2img-context recommendations derived from
+survives -- exactly the shielding failure mode. These geometries are outside the
+current local detector's scope, so each tuning change must be re-confirmed on
+the oracle. These are img2img-context recommendations derived from
 generation-context sources plus our own measurements; treat the playbook as hypotheses to verify, not
 settled defaults.
 
@@ -512,7 +524,7 @@ held by its masked ArcFace vector -- no original pixel copied.
   drift, NOT a perfect face swap. Set expectations; PuLID/InstantID are the higher-fidelity (heavier)
   paths if needed.
 - **Value scales with strength:** at low strength (OpenAI 0.10) faces barely drift, so FaceID is
-  marginal; at the higher strength a hard vendor (Google 0.30) needs, FaceID earns its keep.
+  marginal; at the higher strength then used for a hard vendor (Google 0.30), FaceID earned its keep.
 
 ### Build plan (staged)
 
@@ -527,7 +539,8 @@ https://instantid.github.io/ · https://arxiv.org/abs/2308.06721 (IP-Adapter)
 
 ### FaceID prototype run 1 -- 2026-06-03 (NEGATIVE on dense small-face groups)
 
-Built and shipped the masked multi-face FaceID layer (`--face-id`, `face_id.py`, `faceid` extra).
+Built and shipped the masked multi-face FaceID layer (`--face-id`, `face_id.py`, `faceid` extra;
+all three were removed after this run and never reached the tracked tree).
 First real run on the gemini_3 group photo (Google, s015, scale 0.6, native 2816 via cap 1536):
 insightface detected **17 faces**, the masked multi-face pass composed and ran end-to-end (non-black
 output), so the API is correct. **At s015 the result is a clear FAILURE: every face corrupted --
@@ -631,7 +644,7 @@ photo only).
 
 **Sources.** https://arxiv.org/abs/2206.11253 (CodeFormer) · https://github.com/sczhou/CodeFormer ·
 https://arxiv.org/pdf/2401.07519 (InstantID) ·
-https://openaccess.thecvf.com/content/WACV2024/papers/Suin_Diffuse_and_Restore... (region-adaptive) ·
+https://openaccess.thecvf.com/content/WACV2024/html/Suin_Diffuse_and_Restore_A_Region-Adaptive_Diffusion_Model_for_Identity-Preserving_Blind_WACV_2024_paper.html (region-adaptive) ·
 https://arxiv.org/pdf/2504.12809 (saliency-aware watermark removal)
 
 ## Provenance

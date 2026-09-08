@@ -1,7 +1,7 @@
 """Rebuild the visible-watermark alpha assets from controlled captures.
 
-The committed, reproducible build of the bundled visible-mark assets -- the inputs
-live in ``data/<engine>_capture/captures/`` (committed solid-colour captures run
+The committed, reproducible build of the bundled visible-mark assets. The inputs
+live in ``data/calibration/<engine>/`` (committed solid-color captures run
 through the generator). Re-run after re-capturing.
 
 **Doubao "豆包AI生成" strip and Jimeng "★ 即梦AI" wordmark** are fixed
@@ -74,21 +74,21 @@ class EngineSpec:
 _SPECS: dict[str, EngineSpec] = {
     "doubao": EngineSpec(
         "doubao",
-        _ROOT / "data" / "doubao_capture" / "captures",
+        _ROOT / "data" / "calibration" / "doubao",
         "doubao_black_1x1_1.png",
         "doubao_gray_1x1_1.png",
         _ROOT / "src" / "remove_ai_watermarks" / "assets" / "doubao_alpha.png",
     ),
     "jimeng": EngineSpec(
         "jimeng",
-        _ROOT / "data" / "jimeng_capture" / "captures",
+        _ROOT / "data" / "calibration" / "jimeng",
         "jimeng_cap_A.png",  # black seed
         "jimeng_cap_C.png",  # gray seed
         _ROOT / "src" / "remove_ai_watermarks" / "assets" / "jimeng_alpha.png",
     ),
     "samsung": EngineSpec(
         "samsung",
-        _ROOT / "data" / "samsung_capture" / "captures",
+        _ROOT / "data" / "calibration" / "samsung",
         "samsung_black_1.png",  # black flat edit (mark on true black, bottom-left)
         "samsung_gray_1.png",  # gray flat edit
         _ROOT / "src" / "remove_ai_watermarks" / "assets" / "samsung_alpha.png",
@@ -109,7 +109,7 @@ _HALO_PAD = 7  # keep this many px of halo around the glyph body in the saved as
 # PURE-BLACK background (so the engine reads alpha = max(R,G,B)/255 directly, no
 # background fit). Its assets are the sparkle-on-black CAPTURE at two fixed logo
 # sizes (the engine interpolates between them), not an alpha map.
-_GEMINI_CAPTURE = _ROOT / "data" / "gemini_capture" / "captures" / "gemini_black_2048.png"
+_GEMINI_CAPTURE = _ROOT / "data" / "calibration" / "gemini" / "gemini_black_2048.png"
 _GEMINI_ASSETS: dict[int, Path] = {
     96: _ROOT / "src" / "remove_ai_watermarks" / "assets" / "gemini_bg_96.png",
     48: _ROOT / "src" / "remove_ai_watermarks" / "assets" / "gemini_bg_48.png",

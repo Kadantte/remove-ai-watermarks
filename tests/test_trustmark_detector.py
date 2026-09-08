@@ -3,20 +3,25 @@
 TrustMark is an optional dependency (extra ``trustmark``) that downloads model
 weights on first use, so the decode path is only exercised when it is installed
 (mirrors the imwatermark handling). The always-on test pins the graceful
-absent/error behaviour: detect must return None, never raise.
+absent/error behavior: detect must return None, never raise.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import hashlib
+from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from remove_ai_watermarks import trustmark_detector
-from remove_ai_watermarks.trustmark_detector import detect_trustmark, is_available
+from remove_ai_watermarks.identify import identify
+from remove_ai_watermarks.trustmark_detector import detect_trustmark, detect_trustmark_image, is_available
 
-if TYPE_CHECKING:
-    from pathlib import Path
+_OFFICIAL_FIXTURE = (
+    Path(__file__).resolve().parent.parent / "data" / "fixtures" / "provenance" / "adobe-trustmark-p.png"
+)
+_OFFICIAL_FIXTURE_SHA256 = "e58c5825ed7e5d9fb04710ea541b61bd55879cad65554c0d46260aa24b3d0755"
 
 
 class _FakeDecoder:
@@ -24,11 +29,12 @@ class _FakeDecoder:
     ``(secret, present, schema)`` tuples -- the first for the original image, the
     second for the re-encoded copy used by the false-positive durability gate."""
 
-    def __init__(self, *results: tuple[bytes, bool, int]):
+    def __init__(self, *results: tuple[str, bool, int]):
         self._results = list(results)
         self.calls = 0
 
-    def decode(self, _img: object) -> tuple[bytes, bool, int]:
+    def decode(self, _img: object, mode: str = "binary") -> tuple[str, bool, int]:
+        assert mode == "binary"
         result = self._results[min(self.calls, len(self._results) - 1)]
         self.calls += 1
         return result
@@ -64,26 +70,63 @@ class TestFalsePositiveGate:
         monkeypatch.setattr(trustmark_detector, "_decoder", lambda: decoder)
 
     def test_durable_watermark_survives_and_is_reported(self, monkeypatch, tmp_clean_png: Path):
-        decoder = _FakeDecoder((b"secret", True, 2), (b"secret", True, 2))
+        decoder = _FakeDecoder(("secret", True, 2), ("secret", True, 2))
         self._patch_decoder(monkeypatch, decoder)
         result = detect_trustmark(tmp_clean_png)
         assert result == "Adobe TrustMark (variant P, schema 2)"
         assert decoder.calls == 2  # original + re-encode
 
+    def test_already_decoded_image_uses_the_same_gate(self, monkeypatch):
+        decoder = _FakeDecoder(("secret", True, 2), ("secret", True, 2))
+        self._patch_decoder(monkeypatch, decoder)
+
+        result = detect_trustmark_image(Image.new("RGB", (32, 32)), source="benchmark fixture")
+
+        assert result == "Adobe TrustMark (variant P, schema 2)"
+        assert decoder.calls == 2
+
     def test_false_positive_collapsing_on_reencode_is_dropped(self, monkeypatch, tmp_clean_png: Path):
         # Present on the original, absent after re-encode -> content-noise FP.
-        decoder = _FakeDecoder((b"\x00\x01", True, 3), (b"", False, -1))
+        decoder = _FakeDecoder(("01", True, 2), ("", False, -1))
         self._patch_decoder(monkeypatch, decoder)
         assert detect_trustmark(tmp_clean_png) is None
 
     def test_schema_drift_on_reencode_is_dropped(self, monkeypatch, tmp_clean_png: Path):
         # Present both times but the schema changes -> not a stable watermark.
-        decoder = _FakeDecoder((b"\x00", True, 2), (b"\x00", True, 3))
+        decoder = _FakeDecoder(("01", True, 2), ("01", True, 3))
         self._patch_decoder(monkeypatch, decoder)
         assert detect_trustmark(tmp_clean_png) is None
 
+    def test_payload_drift_on_reencode_is_dropped(self, monkeypatch, tmp_clean_png: Path):
+        decoder = _FakeDecoder(("first", True, 2), ("second", True, 2))
+        self._patch_decoder(monkeypatch, decoder)
+        assert detect_trustmark(tmp_clean_png) is None
+
+    def test_weak_schema_three_is_dropped(self, monkeypatch, tmp_clean_png: Path):
+        decoder = _FakeDecoder(("secret", True, 3))
+        self._patch_decoder(monkeypatch, decoder)
+        assert detect_trustmark(tmp_clean_png) is None
+        assert decoder.calls == 1
+
     def test_absent_skips_reencode(self, monkeypatch, tmp_clean_png: Path):
-        decoder = _FakeDecoder((b"", False, -1))
+        decoder = _FakeDecoder(("", False, -1))
         self._patch_decoder(monkeypatch, decoder)
         assert detect_trustmark(tmp_clean_png) is None
         assert decoder.calls == 1  # no second decode when the first is absent
+
+
+@pytest.mark.skipif(not is_available(), reason="trustmark not installed")
+def test_official_adobe_variant_p_fixture():
+    assert detect_trustmark(_OFFICIAL_FIXTURE) == "Adobe TrustMark (variant P, schema 1)"
+
+
+@pytest.mark.skipif(not is_available(), reason="trustmark not installed")
+def test_official_adobe_variant_p_fixture_is_provenance_not_ai():
+    report = identify(_OFFICIAL_FIXTURE, check_visible=False)
+    assert report.is_ai_generated is None
+    assert report.ai_from_metadata is False
+    assert any(signal.name == "trustmark" for signal in report.signals)
+
+
+def test_official_adobe_variant_p_fixture_digest():
+    assert hashlib.sha256(_OFFICIAL_FIXTURE.read_bytes()).hexdigest() == _OFFICIAL_FIXTURE_SHA256

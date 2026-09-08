@@ -1,20 +1,16 @@
-"""Tests for open invisible-watermark (imwatermark) detection.
+"""Tests for open DWT-DCT watermark detection.
 
-Each known scheme is round-tripped: embed its exact upstream pattern with the
-encoder, then assert the detector names it. Skipped entirely if the optional
-``invisible-watermark`` package is not installed.
+The upstream encoder supplies known watermarks, while the in-tree decoder must
+both identify them and match the upstream decoder bit for bit.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 from remove_ai_watermarks.invisible_watermark import (
     _BITS_48,
@@ -25,7 +21,7 @@ from remove_ai_watermarks.invisible_watermark import (
     is_available,
 )
 
-pytestmark = pytest.mark.skipif(not is_available(), reason="invisible-watermark not installed")
+pytestmark = pytest.mark.skipif(not is_available(), reason="detect extra not installed")
 
 
 def _base_image() -> np.ndarray:
@@ -60,7 +56,66 @@ class TestHelpers:
         assert _bytes_match_frac(b"abc", b"abcd") == 0.0
 
 
+class TestRaveledHaarPass:
+    """The precondition that makes the decoder's flat Haar pass legitimate.
+
+    `_approximation` replaces `pywt.dwt(x, "haar", axis=1)[0]` with one
+    `downcoef` call over `x.ravel()`. That is exact only while the last axis is
+    even. Neither half of this is checked anywhere else: the equivalence is a
+    property of pywt's implementation that an upgrade could take away, and an
+    odd width produces wrong bits with no exception, since the reshape still
+    succeeds whenever the total length is even.
+    """
+
+    @pytest.mark.parametrize("shape", [(64, 64), (7, 128), (129, 2), (2, 2), (33, 400)])
+    def test_matches_pywt_dwt_on_even_widths(self, shape: tuple[int, int]):
+        import pywt
+
+        from remove_ai_watermarks.dwt_dct import _approximation
+
+        rng = np.random.default_rng(0)
+        # uint8 is what the FIRST production pass receives -- `decode` builds its
+        # plane with cvtColor, and extractChannel and transpose preserve the
+        # dtype -- so a divergence in how downcoef coerces integers would be
+        # invisible to a float-only parametrization.
+        for array in (
+            rng.random(shape),
+            rng.integers(0, 256, shape).astype(np.float64),
+            rng.integers(0, 256, shape).astype(np.uint8),
+        ):
+            expected = pywt.dwt(array, "haar", axis=1)[0]
+            got = _approximation(array)
+            assert got.shape == expected.shape
+            assert np.array_equal(got, expected), "downcoef diverged from dwt -- a pywt upgrade may have changed it"
+
+    def test_odd_width_raises_instead_of_returning_wrong_bits(self):
+        from remove_ai_watermarks.dwt_dct import _approximation
+
+        # 4x6 ravels to 24, an even total, so the reshape would happily produce
+        # a 4x3 array of numbers that pair across row boundaries.
+        with pytest.raises(RuntimeError, match="odd"):
+            _approximation(np.zeros((4, 6))[:, :5])
+
+
 class TestDetect:
+    def test_committed_sdxl_carrier(self):
+        path = Path(__file__).parents[1] / "data/fixtures/provenance/sdxl-dwt-dct.png"
+        assert detect_invisible_watermark(path) == "Stable Diffusion XL"
+
+    def test_in_tree_decoder_matches_upstream(self, tmp_path: Path):
+        from imwatermark import WatermarkDecoder
+
+        from remove_ai_watermarks.dwt_dct import decode_dwt_dct
+        from remove_ai_watermarks.image_io import imread
+
+        path = _write_bits_watermark(tmp_path, _BITS_48["Stable Diffusion XL"])
+        image = imread(path)
+        assert image is not None
+
+        upstream = np.asarray(WatermarkDecoder("bits", 48).decode(image, "dwtDct"), dtype=bool)
+        ours = np.asarray(decode_dwt_dct(image, wm_len=48), dtype=bool)
+        assert np.array_equal(ours, upstream)
+
     def test_detects_sdxl(self, tmp_path: Path):
         path = _write_bits_watermark(tmp_path, _BITS_48["Stable Diffusion XL"])
         assert detect_invisible_watermark(path) == "Stable Diffusion XL"

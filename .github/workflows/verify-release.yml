@@ -1,0 +1,247 @@
+name: Verify release surfaces
+
+# Post-release verification: after distribute.yml fans a release out to
+# Homebrew, the HF Space, and the ComfyUI Registry, confirm every published
+# surface actually landed and works. This workflow is the automated twin of
+# the manual checklist in docs/release-and-distribution.md ("Release
+# verification"), not a replacement for the library's own test suite (which
+# already ran in test.yml and publish.yml).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to verify (no leading v). Blank = latest on PyPI."
+        required: false
+  workflow_run:
+    workflows: ["Distribute on release"]
+    types: [completed]
+
+# No step reads the GitHub token any more: the ComfyUI check moved to the
+# registry's public API. Keep the job read-only so it cannot write on a repo
+# whose default token permission is read/write.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # Only run on a successful distribute (not on manual dispatch, where the
+    # version input or PyPI-latest provides the target).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # The Space id appears in the Hub API, the raw-file URL and the app host,
+      # spelled three different ways. Name it once so a move cannot half-land.
+      SPACE_REPO: wiltodelta/remove-ai-watermarks
+      SPACE_URL: https://wiltodelta-remove-ai-watermarks.hf.space
+
+    steps:
+      - name: Resolve target version
+        id: v
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            v="${{ github.event.inputs.version }}"
+          else
+            v=$(curl -fsSL https://pypi.org/pypi/remove-ai-watermarks/json \
+              | python3 -c "import sys,json;print(json.load(sys.stdin)['info']['version'])")
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Verifying release $v"
+
+      # -- PyPI ---------------------------------------------------------------
+      - name: Verify PyPI
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Checking PyPI for $VERSION..."
+          rel=$(curl -fsSL "https://pypi.org/pypi/remove-ai-watermarks/$VERSION/json")
+          echo "$rel" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d['info']['version'] == '$VERSION', f\"PyPI version mismatch: {d['info']['version']}\"
+          assert d['urls'], 'No files on PyPI'
+          has_wheel = any(u['packagetype'] == 'bdist_wheel' for u in d['urls'])
+          has_sdist = any(u['packagetype'] == 'sdist' for u in d['urls'])
+          assert has_wheel, 'No wheel on PyPI'
+          assert has_sdist, 'No sdist on PyPI'
+          print(f'  PyPI: {len(d[\"urls\"])} files (wheel + sdist) for $VERSION')
+          "
+
+      # -- Clean install from PyPI ---------------------------------------------
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Verify clean install
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Installing remove-ai-watermarks==$VERSION in a clean environment..."
+          export PATH="$HOME/.local/bin:$PATH"
+          result=$(uvx --from "remove-ai-watermarks==$VERSION" remove-ai-watermarks --version 2>&1) \
+            || { echo "::error::Clean install failed: $result"; exit 1; }
+          echo "  Clean install: $result"
+
+      # -- Homebrew --------------------------------------------------------------
+      - name: Verify Homebrew formula
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Checking Homebrew tap formula..."
+          formula=$(curl -fsSL \
+            "https://raw.githubusercontent.com/wiltodelta/homebrew-tap/main/Formula/remove-ai-watermarks.rb")
+          echo "$formula" | grep -q "remove_ai_watermarks-$VERSION.tar.gz" \
+            || { echo "::error::Homebrew formula does not reference $VERSION"; \
+                 echo "Formula URL line:"; echo "$formula" | grep '^url'; exit 1; }
+          echo "  Homebrew: formula points to $VERSION"
+
+      # -- ComfyUI ------------------------------------------------------------------
+      - name: Verify ComfyUI registry node requires this release
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Checking the ComfyUI Registry node..."
+          # Read the published versions directly. Do NOT proxy through the sync
+          # workflow's run status: the node repo runs that workflow on a daily
+          # schedule too, so a green nightly says nothing about THIS release.
+          #
+          # And read the versions list, not `latest_version` on the node object.
+          # The registry reviews a new upload before activating it, and
+          # `latest_version` reports only the active one -- so for the whole
+          # review window a correctly published version looks identical to one
+          # that was never uploaded. Those are opposite situations: one is a
+          # queue nobody here controls, the other is a broken release.
+          versions=$(curl -fsSL "https://api.comfy.org/nodes/remove-ai-watermarks/versions")
+          status=$(printf '%s' "$versions" | VERSION="$VERSION" python3 -c "
+          import json, os, sys
+          version = os.environ['VERSION']
+          floor = f'>={version}'
+          matches = [
+              v for v in json.load(sys.stdin)
+              if any(floor in d for d in (v.get('dependencies') or []))
+          ]
+          if not matches:
+              sys.exit(f'::error::No ComfyUI node version requires {version}; the sync never published one')
+          # Sort rather than trusting the response order: the endpoint happens to
+          # return newest-first today and nothing documents that it must.
+          newest = max(matches, key=lambda v: v.get('createdAt') or '')
+          print(f\"{newest.get('version')} {newest.get('status')}\")
+          ")
+          node_version=${status%% *}
+          node_status=${status##* }
+          echo "  ComfyUI: node $node_version requires $VERSION (status $node_status)"
+          case "$node_status" in
+            NodeVersionStatusActive)
+              echo "- ComfyUI: registry node $node_version requires $VERSION and is live" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            NodeVersionStatusPending)
+              # Published and waiting on the registry's own review. Say exactly
+              # that in the summary rather than reporting it as live, and do not
+              # fail: an external moderation queue going red on every release
+              # trains everyone to ignore this workflow.
+              echo "::notice::ComfyUI node $node_version is published and awaiting registry review."
+              echo "- ComfyUI: registry node $node_version requires $VERSION, awaiting registry activation" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::ComfyUI node $node_version is $node_status"
+              exit 1
+              ;;
+          esac
+
+      # -- HF Space -------------------------------------------------------------------
+      - name: Verify the HF Space serves this release
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Checking the HF Space pin..."
+          # The Space pin bump is a MANUAL step (see docs/release-and-distribution.md):
+          # distribute.yml only factory-rebuilds whatever is already pinned. Failing
+          # here is the point -- a demo left on an older release is an incomplete
+          # release, and only this check can say so.
+          reqs=$(curl -fsSL "https://huggingface.co/spaces/$SPACE_REPO/raw/main/requirements.txt")
+          pinned=$(printf '%s\n' "$reqs" | sed -n 's/^remove-ai-watermarks==\([0-9][0-9a-zA-Z.]*\).*/\1/p' | head -1)
+          if [ -z "$pinned" ]; then
+            echo "::error::Space requirements.txt has no remove-ai-watermarks== pin"
+            exit 1
+          fi
+          if [ "$pinned" != "$VERSION" ]; then
+            echo "::error::HF Space is pinned to $pinned, not $VERSION."
+            echo "  Bump remove-ai-watermarks in wiltodelta/raiw-hf-space (pyproject.toml,"
+            echo "  uv lock, re-exported requirements.txt) and push; sync-to-hf.yml mirrors it."
+            exit 1
+          fi
+          echo "  HF Space: requirements pin is $pinned"
+
+      - name: Verify the HF Space is running and answering
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A factory rebuild leaves the Space BUILDING for a while; wait for the
+          # runtime stage the API reports rather than for a bare HTTP 200, which a
+          # build page also returns.
+          for attempt in $(seq 1 20); do
+            stage=$(curl -fsSL "https://huggingface.co/api/spaces/$SPACE_REPO" \
+              | python3 -c "import json,sys;print((json.load(sys.stdin).get('runtime') or {}).get('stage',''))")
+            echo "  attempt $attempt: runtime stage=$stage"
+            [ "$stage" = "RUNNING" ] && break
+            case "$stage" in
+              BUILD_ERROR|RUNTIME_ERROR|CONFIG_ERROR)
+                echo "::error::HF Space runtime stage is $stage"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          if [ "$stage" != "RUNNING" ]; then
+            echo "::error::HF Space never reached RUNNING (last stage: $stage)"
+            exit 1
+          fi
+
+          # Alive is not the same as working. Drive the two CPU surfaces the demo
+          # exists for, against the Space's own committed example, and require a
+          # real verdict rather than any HTTP 200.
+          export PATH="$HOME/.local/bin:$PATH"
+          curl -fsSL -o /tmp/example.png \
+            "https://huggingface.co/spaces/$SPACE_REPO/resolve/main/examples/doubao-aigc.png"
+          uv run --no-project --with 'gradio_client>=1,<2' python - <<'PYEOF'
+          import os
+          import sys
+
+          from gradio_client import Client, handle_file
+
+          # The committed example is a 5 MB PNG, and httpx's default 5 s write
+          # timeout aborts that upload on a slow link before the Space ever sees
+          # it -- which would read as a broken demo rather than a slow one.
+          client = Client(os.environ["SPACE_URL"], verbose=False, httpx_kwargs={"timeout": 300})
+
+          report = client.predict(path=handle_file("/tmp/example.png"), api_name="/run_identify")
+          if "Verdict:" not in report:
+              sys.exit(f"::error::/run_identify returned no verdict: {report[:200]!r}")
+          print(f"  HF Space identify: {report.splitlines()[0]}")
+
+          _image, _file, info = client.predict(
+              path=handle_file("/tmp/example.png"),
+              sensitivity_label="auto (recommended)",
+              api_name="/run_visible",
+          )
+          if "Removed:" not in info:
+              sys.exit(f"::error::/run_visible removed nothing on the Doubao example: {info!r}")
+          print(f"  HF Space visible: {info.splitlines()[0]}")
+          PYEOF
+          echo "- HF Space: pinned to $VERSION, RUNNING, identify + visible answered" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # Every check above appends its own line to the step summary as it passes,
+          # and every one of them fails the job instead of warning. So this heading
+          # can only be reached when all of them actually held -- an unconditional
+          # "verified" block printed here once claimed surfaces nobody had checked.
+          sed -i "1i ## Release $VERSION verified" "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"

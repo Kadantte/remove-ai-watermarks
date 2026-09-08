@@ -18,9 +18,13 @@ from __future__ import annotations
 
 import struct
 import tracemalloc
+from typing import TYPE_CHECKING
 
 from remove_ai_watermarks import metadata
-from remove_ai_watermarks.noai import c2pa, isobmff
+from remove_ai_watermarks._internal import c2pa, isobmff
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 _HUGE = 0x7FFFFFFF  # ~2 GiB declared length on a tiny file
@@ -128,3 +132,28 @@ class TestIsobmffStripFailSafe:
         assert stripped == 0
         assert cleaned == data
         assert len(cleaned) == len(data)
+
+
+class TestRiffLateMetadataIsBounded:
+    """A metadata scan must not become a near-full-file read because one chunk lied
+    about its length. This runs on the memoized verdict path, over images from
+    arbitrary sources."""
+
+    def _webp_with_declared_length(self, path: Path, declared: int, payload: bytes) -> Path:
+        chunk = b"XMP " + declared.to_bytes(4, "little") + payload
+        body = b"WEBP" + b"VP8 " + (4).to_bytes(4, "little") + b"\x00\x00\x00\x00" + chunk
+        path.write_bytes(b"RIFF" + len(body).to_bytes(4, "little") + body)
+        return path
+
+    def test_a_chunk_claiming_the_whole_file_is_clamped_to_what_remains(self, tmp_path: Path):
+        target = self._webp_with_declared_length(tmp_path / "liar.webp", 1 << 30, b"AI" * 64)
+
+        collected = metadata._riff_late_metadata(target, 12)
+
+        assert collected == b"AI" * 64
+
+    def test_the_total_is_capped(self, tmp_path: Path):
+        payload = b"x" * 4096
+        target = self._webp_with_declared_length(tmp_path / "big.webp", len(payload), payload)
+
+        assert len(metadata._riff_late_metadata(target, 12, max_total=512)) == 512

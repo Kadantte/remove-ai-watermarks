@@ -9,12 +9,12 @@ SSIM alone does NOT equal "bad": a high-texture image legitimately changes under
 the SDXL scrub. Use the ranked output to pick candidates, then look at them to
 name the failure classes (garbled text, deformed faces, over-smoothed detail).
 
-Operates on gitignored data only (data/spaces/...); writes nothing tracked.
+Operates on gitignored local data only; writes nothing tracked.
 
     uv run python scripts/invisible_quality_audit.py \
-        --originals data/spaces/originals/2026-06-03 \
-        --cleaned   data/spaces/results/2026-06-03 \
-        --out data/spaces/_quality_audit.csv --worst 25
+        --originals .local-eval/originals \
+        --cleaned .local-eval/results \
+        --out .local-eval/quality-audit.csv --worst 25
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _stem(name: str) -> str:
 @click.command()
 @click.option("--originals", type=click.Path(exists=True, file_okay=False, path_type=Path), required=True)
 @click.option("--cleaned", type=click.Path(exists=True, file_okay=False, path_type=Path), required=True)
-@click.option("--out", type=click.Path(path_type=Path), default=Path("data/spaces/_quality_audit.csv"))
+@click.option("--out", type=click.Path(path_type=Path), default=Path(".local-eval/quality-audit.csv"))
 @click.option("--worst", type=int, default=25, help="Print the N lowest-SSIM pairs.")
 def main(originals: Path, cleaned: Path, out: Path, worst: int) -> None:
     logging.basicConfig(level=logging.WARNING, format="%(message)s")

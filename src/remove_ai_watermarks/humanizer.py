@@ -1,7 +1,7 @@
 """Post-processing filters for the cleaned output.
 
-``apply_analog_humanizer`` injects film grain and chromatic aberration to defeat
-digital AI-perfection classifiers (ported from NeuralBleach); ``unsharp_mask``
+``apply_analog_humanizer`` injects film grain and chromatic aberration to reduce
+overly uniform digital surfaces; ``unsharp_mask``
 counters the soft, over-smoothed look that the diffusion pass leaves behind
 (itself a common "this is AI" tell).
 """
@@ -9,17 +9,22 @@ counters the soft, over-smoothed look that the diffusion pass leaves behind
 # cv2/numpy boundary: third-party libs ship no usable element types; relax the
 # unknown-type rules for this file only.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeArgument=false, reportMissingTypeStubs=false, reportMissingImports=false, reportArgumentType=false, reportAssignmentType=false, reportReturnType=false, reportCallIssue=false, reportIndexIssue=false, reportOperatorIssue=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportOptionalSubscript=false, reportOptionalOperand=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportPrivateUsage=false, reportInvalidTypeForm=false, reportConstantRedefinition=false, reportUnnecessaryComparison=false
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import cv2
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from numpy.typing import NDArray
 
 
 def apply_analog_humanizer(image: NDArray, grain_intensity: float = 4.0, chromatic_shift: int = 1) -> NDArray:
     """
-    Apply Analog Humanizer (film grain and chromatic aberration) to an image.
-    This simulates analog film imperfections to defeat digital AI perfection classifiers.
-
-    Ported from NeuralBleach.
+    Apply shared-luminance grain and a small lateral color offset.
 
     Args:
         image: BGR image as numpy array (uint8).
@@ -33,23 +38,22 @@ def apply_analog_humanizer(image: NDArray, grain_intensity: float = 4.0, chromat
     if len(image.shape) != 3 or image.shape[2] != 3:
         return image.copy()
 
-    # Split channels (OpenCV uses BGR)
-    # B = 0, G = 1, R = 2
+    # Translate the outer color channels without circular edge wrapping.
     b, g, r = cv2.split(image)
+    shift = min(max(0, chromatic_shift), max(0, image.shape[1] - 1))
+    if shift > 0:
+        shifted_b = np.empty_like(b)
+        shifted_b[:, :shift] = b[:, :1]
+        shifted_b[:, shift:] = b[:, :-shift]
+        b = shifted_b
 
-    # 1. Chromatic Aberration
-    # Shift R channel left, B channel right. np.roll is circular, so it wraps
-    # the opposite edge into a thin colored fringe at the L/R borders; replicate
-    # the original edge columns there to keep the intended offset interior-only.
-    if chromatic_shift > 0:
-        r = np.roll(r, -chromatic_shift, axis=1)
-        r[:, -chromatic_shift:] = r[:, -chromatic_shift - 1 : -chromatic_shift]
-        b = np.roll(b, chromatic_shift, axis=1)
-        b[:, :chromatic_shift] = b[:, chromatic_shift : chromatic_shift + 1]
+        shifted_r = np.empty_like(r)
+        shifted_r[:, :-shift] = r[:, shift:]
+        shifted_r[:, -shift:] = r[:, -1:]
+        r = shifted_r
 
     merged = cv2.merge((b, g, r))
 
-    # 2. Film Grain (Gaussian Noise)
     if grain_intensity > 0:
         img_f = merged.astype(np.float32)
         noise = np.random.normal(0, grain_intensity, img_f.shape).astype(np.float32)
@@ -86,7 +90,7 @@ def unsharp_mask(image: NDArray, amount: float = 0.5, sigma: float = 1.0) -> NDA
 
 # ── Adaptive polish (target the input's detail level; spare text) ──────────────
 # A capped unsharp scaled to the sharpness deficit, then edge-masked grain to close
-# the rest -- tunable constants. Validated 2026-06-03 on the spaces corpus: a soft
+# the rest -- tunable constants. Compatibility testing showed that a soft
 # gemini_3 face/photo (lap-var 84 vs the 592 of its original) is pulled up to ~327
 # with full polish, while a sharp openai_1 text card (1175 vs 1644) gets near-zero
 # (the deficit is tiny) so text is left alone -- the polish self-limits on text.
@@ -123,7 +127,12 @@ def _smooth_grain_mask(image: NDArray) -> NDArray:
     return cv2.GaussianBlur(mask, (0, 0), sigmaX=1.5)
 
 
-def adaptive_polish(image: NDArray, reference: NDArray, seed: int | None = None) -> NDArray:
+def adaptive_polish(
+    image: NDArray,
+    reference: NDArray,
+    seed: int | None = None,
+    on_skip: Callable[[str], None] | None = None,
+) -> NDArray:
     """Restore the detail level of ``reference`` in a softened ``image``, sparing text.
 
     Diffusion + face restoration leave an over-smoothed "AI-plastic" look, worst on
@@ -134,10 +143,20 @@ def adaptive_polish(image: NDArray, reference: NDArray, seed: int | None = None)
     almost no polish is applied (text legibility is a generation-side concern, not a
     filter one). No-op when the image already meets the reference's detail level.
 
+    That no-op used to be silent, which made ``--humanize`` look like it composed
+    with the polish when it had in fact replaced it: grain raises the measured detail
+    level past the reference's, so the polish sees no deficit and returns the grain
+    untouched. ``on_skip`` reports it instead. (The engine now runs the polish BEFORE
+    the humanizer, so the two compose; a caller driving the helpers directly can
+    still reach the no-op, and an output that is already sharper than its source
+    reaches it whatever the order.)
+
     Args:
         image: the cleaned BGR output (uint8).
         reference: the original input BGR at the same resolution (the detail target).
         seed: optional RNG seed for reproducible grain.
+        on_skip: optional callback invoked with a one-line reason when the polish
+            self-limits to nothing, so the skip is not silent.
 
     Returns:
         Polished BGR image (uint8).
@@ -145,6 +164,11 @@ def adaptive_polish(image: NDArray, reference: NDArray, seed: int | None = None)
     target = _laplacian_variance(reference)
     current = _laplacian_variance(image)
     if target <= 0.0 or current >= target:
+        if on_skip is not None:
+            on_skip(
+                "Adaptive polish: nothing to close -- the image already meets the source's "
+                f"detail level (Laplacian variance {current:.1f} vs {target:.1f})."
+            )
         return image.copy()
 
     deficit = target / max(current, 1.0)

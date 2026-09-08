@@ -1,0 +1,22 @@
+Jimeng published-image research fixture
+=======================================
+
+File:
+  data/fixtures/visible/jimeng_pill/provider-published-example.jpg
+
+Source:
+  Zhonglun W&D, Bank Finance Legal Newsletter, 2026, page 29
+  https://www.zhonglunwende.com/uploads/20260202/97f9a8f64892eac6b7e04e5e7ea45d0e.pdf
+
+Extraction:
+  The file is the JPEG image embedded in the source PDF, extracted byte-for-byte
+  with pdfimages. SHA-256:
+  1182fba74d3753785345f8a35d09a8c9b52ea8383ebe9ee999d0d027437f03fd
+
+Use in this repository:
+  This single image is retained as a minimal research and interoperability
+  fixture for identifying and removing the visible Jimeng AI-generation marks.
+  It is not offered under this repository's Apache-2.0 license. Copyright and
+  all other rights remain with their respective holders. No license for uses
+  outside the repository's research, testing, criticism, and documentation is
+  granted here.

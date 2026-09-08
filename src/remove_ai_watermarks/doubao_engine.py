@@ -1,16 +1,19 @@
-"""Doubao visible watermark removal engine.
+"""Doubao visible watermark detector/localizer.
 
 Doubao (ByteDance) stamps every generated image with a visible "豆包AI生成"
 (Doubao AI generated) text strip in the bottom-right corner -- the explicit AIGC
 label mandated by China's TC260 standard, a near-white semi-transparent overlay.
 
-Removal is **reverse-alpha blending** against a captured alpha map
-(``original = (wm - a*logo)/(1-a)``), always NCC-aligned to the actual mark plus a
-thin residual inpaint over the glyph footprint. This is one of the three text-mark
-engines that share :class:`remove_ai_watermarks._text_mark_engine.TextMarkEngine`;
-this module supplies only Doubao's tuned :class:`TextMarkConfig` (bottom-right corner,
-``assets/doubao_alpha.png`` rebuilt by ``scripts/visible_alpha_solve.py``). Arbitrary-
-region inpainting still lives in ``region_eraser`` / the ``erase`` command.
+Detection matches the bundled glyph silhouette against the corner candidate; removal
+is the shared **localize -> fill**. Doubao reuses that aligned silhouette as a sparse
+glyph footprint instead of bounding the thresholded corner response: bright scene
+texture behind this bottom-edge mark can otherwise expand a solid mask to the frame
+edges, where classical inpainting has no outside context. This module shares
+:class:`remove_ai_watermarks._text_mark_engine.TextMarkEngine` and
+supplies only Doubao's tuned :class:`TextMarkConfig` (bottom-right corner,
+``assets/doubao_alpha.png`` -- the detection silhouette, rebuilt by
+``scripts/visible_alpha_solve.py``). Arbitrary-region inpainting still lives in
+``region_eraser`` / the ``erase`` command.
 """
 # The module-level _alpha_template / _glyph_silhouette / _template_match_score below
 # are thin test-facing shims (imported by tests/), so pyright's src-only pass sees them
@@ -21,12 +24,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from remove_ai_watermarks import _text_mark_engine
+from remove_ai_watermarks import _text_mark_engine, image_io
 from remove_ai_watermarks._text_mark_engine import TextMarkConfig, TextMarkDetection, TextMarkEngine
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from numpy.typing import NDArray
 
 # Locate geometry as a fraction of image WIDTH (the mark scales with width, anchored
@@ -46,21 +47,36 @@ TOPHAT_DELTA = 12  # glyph must exceed the local background by this many levels
 # Shape-consistent detection: match the bundled alpha glyph silhouette against the
 # corner candidate via TM_CCOEFF_NORMED (keys on glyph SHAPE, not coverage; #23).
 DETECT_MIN_COVERAGE = 0.04
-DETECT_NCC_THRESHOLD = 0.4
+# NOTE: this gate is FRONT-END SPECIFIC. The continuous top-hat front-end scores higher
+# overall than the binary one (mean 0.809 vs 0.723 on the same 90 positives), so the
+# binary-era 0.40 left the provenance-relaxed gate (x0.7) far too low and admitted false
+# fires. Calibrated on the 240-image unbiased recall sample, full auto path:
+#
+#   gate   relaxed   recall   precision   true   false
+#   0.40     0.280      96%         91%     86       8
+#   0.45     0.315      94%         93%     85       6
+#   0.50     0.350      92%         99%     83       1   <- chosen
+#   0.60     0.420      87%         99%     78       1
+#
+# 0.50 beats the binary front-end on recall (92% vs 89%) at identical precision (99%),
+# which is the only reason the front-end switch is worth it. Do not port this number to
+# a binary-front-end mark; re-calibrate per front-end.
+DETECT_NCC_THRESHOLD = 0.50
 
-# Reverse-alpha geometry, emitted by scripts/visible_alpha_solve.py at the captured
-# width. Removal always tries fixed AND NCC-aligned placement and keeps the lower
-# residual, then a thin footprint inpaint clears the leftover edges.
+# Detection-silhouette geometry, emitted by scripts/visible_alpha_solve.py at the
+# captured width. Sizes the glyph silhouette for the TM_CCOEFF_NORMED detection match;
+# Doubao also reuses the aligned alpha as its sparse removal footprint.
 _ALPHA_NATIVE_WIDTH = 2048
-_ALPHA_LOGO_BGR: tuple[float, float, float] = (255.0, 255.0, 255.0)
-_ALPHA_WIDTH_FRAC = 0.1636  # asset width / image width -- the alignment scale seed
+_ALPHA_WIDTH_FRAC = 0.1636  # asset width / image width -- sizes the detection silhouette
 _ALPHA_HEIGHT_FRAC = 0.0405
-_ALPHA_MARGIN_RIGHT_FRAC = 0.0132
-_ALPHA_MARGIN_BOTTOM_FRAC = 0.0166
-_ALPHA_ALIGN_SEARCH = (0.88, 1.12, 25)
-_RESIDUAL_ALPHA_FLOOR = 0.05
-_RESIDUAL_DILATE = 5
-_RESIDUAL_INPAINT_RADIUS = 2
+
+# The captured alpha is also the removal footprint after the detector aligns it.
+# Keep faint anti-aliased edges, then grow by one pixel so cv2 does not leave a halo.
+# A solid enclosing rectangle is unsafe here: the mark sits close to two frame edges,
+# and a textured branch in the canonical sample made the thresholded response reach
+# both edges before OpenCV inpainted the whole block into triangular wedges.
+_FOOTPRINT_ALPHA_FLOOR = 0.05
+_FOOTPRINT_DILATE = 1
 
 _CONFIG = TextMarkConfig(
     name="Doubao",
@@ -77,20 +93,16 @@ _CONFIG = TextMarkConfig(
     morph_open_size=5,
     detect_min_coverage=DETECT_MIN_COVERAGE,
     detect_ncc_threshold=DETECT_NCC_THRESHOLD,
+    detect_frontend="tophat",
+    scale_basis="short",  # measured: recovers 56% of landscape misses (see scale_base)
+    # No rival margin: measured 2026-07-18, the symmetric gate cost Doubao 7 genuine
+    # detections to prevent 5 false ones (1.4:1 against). Doubao's absolute detector
+    # is already 86% precise, so it has nothing to buy; Jimeng's is 38% and gains 25pp
+    # for free. The confusion is asymmetric, so the remedy is too.
     alpha_width_frac=_ALPHA_WIDTH_FRAC,
     alpha_height_frac=_ALPHA_HEIGHT_FRAC,
-    alpha_margin_x_frac=_ALPHA_MARGIN_RIGHT_FRAC,
-    alpha_margin_bottom_frac=_ALPHA_MARGIN_BOTTOM_FRAC,
-    alpha_align_search=_ALPHA_ALIGN_SEARCH,
     min_gw=8,
-    alpha_logo_bgr=_ALPHA_LOGO_BGR,
-    residual_alpha_floor=_RESIDUAL_ALPHA_FLOOR,
-    residual_dilate=_RESIDUAL_DILATE,
-    residual_inpaint_radius=_RESIDUAL_INPAINT_RADIUS,
 )
-
-# Doubao-specific aliases for the shared detection result/engine.
-DoubaoDetection = TextMarkDetection
 
 
 def _alpha_template() -> NDArray[Any] | None:
@@ -103,23 +115,52 @@ def _glyph_silhouette() -> NDArray[Any] | None:
     return _text_mark_engine.glyph_silhouette(_CONFIG.asset_name)
 
 
-def _template_match_score(box_mask: NDArray[Any], image_width: int) -> float:
+def _template_match_score(box_mask: NDArray[Any], scale_base: int) -> float:
     """TM_CCOEFF_NORMED of the Doubao glyph silhouette against ``box_mask``."""
-    return _text_mark_engine.template_match_score(box_mask, image_width, _CONFIG)
+    return _text_mark_engine.template_match_score(box_mask, scale_base, _CONFIG)
 
 
 class DoubaoEngine(TextMarkEngine):
-    """Remove the visible Doubao "豆包AI生成" watermark (locate -> mask -> reverse-alpha)."""
+    """Detect/localize the visible Doubao "豆包AI生成" watermark (locate -> mask; mask feeds the fill)."""
 
     def __init__(self) -> None:
         super().__init__(_CONFIG)
 
+    def footprint_mask(
+        self,
+        image: NDArray[Any] | None,
+        *,
+        force: bool = False,
+        dilate: int | None = None,
+        detection: TextMarkDetection | None = None,
+    ) -> NDArray[Any] | None:
+        """Return the detector-aligned Doubao glyph footprint.
 
-def load_image_bgr(path: str | Path) -> NDArray[Any]:
-    """Read an image as BGR ndarray (helper for scripts/tests)."""
-    from remove_ai_watermarks import image_io
+        The continuous top-hat response is suitable for locating the wordmark but is
+        not a safe removal mask: unrelated bright texture can join the response and
+        enlarge its bounding rectangle. The detector already carries the winning
+        template box, so resize the captured alpha to that exact box and mask only its
+        glyphs. Explicit ``force`` has no trustworthy alignment and retains the shared
+        geometry-box behavior.
+        """
+        if force:
+            return super().footprint_mask(image, force=True, dilate=dilate, detection=detection)
+        if image is None or image.size == 0:
+            return None
 
-    img = image_io.imread(path)
-    if img is None:
-        raise FileNotFoundError(f"Failed to read image: {path}")
-    return img
+        image = image_io.to_bgr(image)
+        det = detection if detection is not None else self.detect(image)
+        if not det.detected or det.match_box is None:
+            return super().footprint_mask(image, force=False, dilate=dilate, detection=det)
+        alpha = _alpha_template()
+        if alpha is None:
+            return super().footprint_mask(image, force=False, dilate=dilate, detection=det)
+
+        radius = _FOOTPRINT_DILATE if dilate is None else max(0, dilate)
+        return self._aligned_alpha_mask(
+            image,
+            det,
+            alpha,
+            alpha_floor=_FOOTPRINT_ALPHA_FLOOR,
+            dilate=radius,
+        )

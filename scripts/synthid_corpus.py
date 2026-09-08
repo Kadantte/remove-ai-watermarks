@@ -1,11 +1,11 @@
 """Ingest and inspect the local SynthID reference corpus.
 
-Copies images into ``data/synthid_corpus/images/<label>/`` and records one row
+Copies images into ``data/synthid/originals/`` and records one row
 per image in ``manifest.csv`` (sha256, resolution, format, C2PA issuer, and the
 external verification level). Dogfoods the project's own C2PA detector so the
 recorded metadata matches what the library sees.
 
-See ``data/synthid_corpus/README.md`` for the collection protocol.
+See ``data/synthid/README.md`` for the collection protocol.
 
 Usage:
     uv run python scripts/synthid_corpus.py ingest IMAGES... --label pos \\
@@ -22,20 +22,20 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
 from _plain_console import Console, Table
 from PIL import Image
 
-from remove_ai_watermarks.noai.c2pa import extract_c2pa_info
+from remove_ai_watermarks._internal.c2pa import extract_c2pa_info
 
 log = logging.getLogger(__name__)
 console = Console()
 
-DEFAULT_ROOT = Path(__file__).resolve().parent.parent / "data" / "synthid_corpus"
-LABELS = ("pos", "neg", "cleaned")
+DEFAULT_ROOT = Path(__file__).resolve().parent.parent / "data" / "synthid"
+LABELS = ("pos", "neg")
 VERIFIED_VIA = ("gemini-app", "openai-verify", "synthid-portal", "c2pa-metadata", "third-party", "none")
 FIELDNAMES = [
     "sha256",
@@ -144,7 +144,7 @@ def ingest(
     root: Path,
 ) -> None:
     """Copy IMAGES into the corpus and append rows to the manifest."""
-    dest_dir = root / "images" / label
+    dest_dir = root / "originals"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     rows = _read_manifest(root)
@@ -160,8 +160,12 @@ def ingest(
         seen.add(digest)
 
         width, height, fmt, issuer, synthid = _probe(src)
-        stored_name = f"{digest[:8]}-{src.name}"
-        shutil.copy2(src, dest_dir / stored_name)
+        stored_name = src.name
+        destination = dest_dir / stored_name
+        if destination.exists() and _sha256(destination) != digest:
+            raise click.ClickException(f"filename already exists with different content: {stored_name}")
+        if not destination.exists():
+            shutil.copy2(src, destination)
 
         new_rows.append(
             {
@@ -176,7 +180,7 @@ def ingest(
                 "c2pa_issuer": issuer,
                 "synthid_metadata": "yes" if synthid else "",
                 "verified_via": verified_via,
-                "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "added": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "notes": notes,
             }
         )

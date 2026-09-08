@@ -1,0 +1,13 @@
+provider,file,content_stratum,signal,verified_via,sha256,verified_text_geometry,verified_text_ground_truth
+openai,"../../synthid/originals/ChatGPT Image May 30, 2026, 10_31_08 AM.png",face_grid,OpenAI SynthID,openai-verify,28ff8732b037f98a4ef5bc277bbcdaa32e5eb9ccbd00b6c8c616e46ef68ae8a0,no,no
+openai,"../../synthid/originals/ChatGPT Image May 31, 2026, 02_02_23 PM.png",multilingual_typography,OpenAI SynthID,c2pa-metadata,228e54413a3ef62b313176dcdba774a56a58c36b54227d1440bc26cbe0aefd82,yes,yes
+openai,"../../synthid/originals/ChatGPT Image May 31, 2026, 02_03_55 PM.png",multilingual_typography,OpenAI SynthID,openai-verify,05b836ecfe40fd689177fda74384ae4fdcc446505bbc4281cd3cbb6523eb669e,yes,yes
+google,../../synthid/originals/Gemini_Generated_Image_633uuy633uuy633u.png,cjk_typography_scene,Google SynthID,gemini-app,4affd7f27767a445db6abf741355743ba8d95108ad922c9fff045feed8492236,yes,yes
+google,../../synthid/originals/Gemini_Generated_Image_akdbeiakdbeiakdb.png,cyrillic_typography_scene,Google SynthID,gemini-app,8c1a6fb03ef3d45a1f958fb3401e4264e409ff88c2a793061db7f29023454d0e,no,no
+google,../../synthid/originals/Gemini_Generated_Image_y48j3cy48j3cy48j.png,crowd_faces,Google SynthID,gemini-app,45d79a683134fcba1b147b2aedb669783d474e1fb8a4df329729a0904fd1b46b,no,no
+google,../../synthid/originals/Gemini_Generated_Image_3mc4t93mc4t93mc4.png,faces_and_typography,Google SynthID,gemini-app,2c33e75a2db614ce74c83cc0a6ac6c3ac735aca83ab88c9c9345843b124f7856,no,no
+meta,../../contentseal/originals/gen_fox_forest.webp,photoreal_texture,Meta Content Seal,meta-oracle,6d7cecf322a5ac4b2547e2f32c767b3cb3e8a0e49f274cfd00aa31be6697eed4,no,no
+meta,../../contentseal/originals/gen_text_poster.webp,typography,Meta Content Seal,meta-oracle,873927662d8198e9c38b4ae71a2919ba5d417dfcd714649db1b0ae231e8cbf9b,no,no
+meta,../../contentseal/originals/gen_lighthouse_watercolor.webp,watercolor,Meta Content Seal,meta-oracle,69bee7c376608568361085602c5c7406900885849bd94c5279c3924cf793b27c,no,no
+meta,../../contentseal/originals/gen_night_city.webp,urban_night,Meta Content Seal,meta-oracle,345adf6b9f777b15ef7ce7bbdfb3b355a1d9e882740809e966e9f6caafd94d48,no,no
+meta,../../contentseal/originals/gen_studio_mug.webp,product_still_life,Meta Content Seal,meta-oracle,2b7bc7fd56fa2250c66ef74f8b3e49d9666fe147d894d5baf9461b5e36077a07,no,no

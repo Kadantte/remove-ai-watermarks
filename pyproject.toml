@@ -1,9 +1,13 @@
 [project]
+# This name is the published PyPI distribution, not a local label: changing it
+# strands every `pip install remove-ai-watermarks` and every pinned dependency
+# on it, including the ComfyUI node package. The console script below carries
+# the same weight, since users have it on PATH.
 name = "remove-ai-watermarks"
-version = "0.10.2"
-description = "AI watermark remover: strip visible and invisible AI watermarks (Gemini / Nano Banana sparkle, SynthID) and provenance metadata (C2PA, EXIF) from images"
+version = "0.38.0"
+description = "AI watermark remover for visible, invisible, and provenance marks in images and video"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.15"
 license = {text = "Apache-2.0"}
 keywords = [
     "ai-watermark",
@@ -33,10 +37,10 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Graphics",
     "Topic :: Multimedia :: Graphics :: Graphics Conversion",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -47,24 +51,51 @@ classifiers = [
 dependencies = [
     "pillow>=10.0.0",
     "piexif>=1.1.3",
-    "numpy>=1.24.0",
-    "opencv-python-headless>=4.8.0",
     "click>=8.0.0",
     "python-dotenv>=1.0.0",
+    # Official C2PA reader (Content Authenticity Initiative, MIT/Apache-2.0). The
+    # primary, spec-tracking manifest parser for the identify/metadata path; the
+    # hand-rolled caBX/CBOR scanner in _internal/c2pa.py is kept only as a fallback for
+    # synthetic/partial blobs the validator rejects. Binary wheel (Rust), but the
+    # import is light (no torch/numpy) so it fits the dependency-light identify
+    # host. Prebuilt wheels cover the full CI matrix (linux/macos/windows).
+    "c2pa-python>=0.35.0",
 ]
 
 [project.optional-dependencies]
-gpu = [
+pixels = [
+    "numpy>=1.24.0; python_version < '3.13'",
+    # NumPy 1.x has no CPython 3.13+ wheels. Requiring 2.x prevents installers
+    # from attempting an unsupported source build on the newer Python lines.
+    "numpy>=2; python_version >= '3.13'",
+    "opencv-python-headless>=4.8.0",
+]
+# Optional HEIC/AVIF pixel decode. Metadata scanning handles these containers
+# without this plugin; combine `heif` with any pixel feature only when needed.
+heif = [
+    "pillow-heif>=0.13.0",
+]
+visible = ["remove-ai-watermarks[pixels]"]
+# Video visible removal uses the shared pixel runtime. PyAV packetizes processed
+# VFR frames with explicit PTS before system ffmpeg encodes them.
+video = [
+    "remove-ai-watermarks[visible]",
+    "av>=18,<19",
+]
+# Open DWT-DCT watermarks used by Stable Diffusion / SDXL / FLUX. The in-tree
+# decoder avoids the upstream invisible-watermark package's mandatory torch and
+# non-headless OpenCV dependencies.
+detect = [
+    "remove-ai-watermarks[pixels]",
+    "PyWavelets>=1.1.1",
+]
+diffusion = [
+    "remove-ai-watermarks[pixels]",
+    # A CUDA-enabled torch build is required: invisible-watermark removal has no
+    # CPU, MPS or XPU path. The default PyPI wheel carries CUDA on Linux/Windows;
+    # on macOS there is no CUDA build and this extra installs only for the
+    # non-diffusion imports it shares.
     "torch>=2.0.0",
-    # The default PyPI torch wheel is a CPU/CUDA build. To drive an Intel GPU
-    # (Arc / Data Center) via ``--device xpu`` you need an XPU-enabled torch
-    # from PyTorch's XPU wheel index (Linux/Windows only -- there is no macOS
-    # XPU build). Install that build first, then this extra (torch is then
-    # already satisfied and won't be re-pulled):
-    #   pip install torch --index-url https://download.pytorch.org/whl/xpu
-    #   pip install 'remove-ai-watermarks[gpu]'
-    # uv users can target the ``pytorch-xpu`` index declared under [tool.uv]:
-    #   uv pip install torch --index-url https://download.pytorch.org/whl/xpu
     "diffusers>=0.38.0",
     # diffusers 0.38's auto-pipeline registry imports ``Qwen3VLForConditional
     # Generation`` (its ``nucleusmoe_image`` pipeline), which only exists in
@@ -80,65 +111,90 @@ gpu = [
     "accelerate>=0.25.0",
     "safetensors",
 ]
-# Open invisible-watermark (imwatermark) decoder for detecting the DWT-DCT
-# watermarks embedded by Stable Diffusion / SDXL / FLUX. Optional because it
-# pulls non-headless opencv AND torch (invisible-watermark declares torch a hard
-# dependency, and WatermarkDecoder eagerly imports rivaGan -> torch at import
-# time, so the dwtDct-only detect path still needs torch present even though it
-# never runs on GPU). So `detect` alone pulls torch -- no need to add `gpu` for
-# detection. identify() guards the import and skips the signal when absent.
-detect = [
-    "invisible-watermark>=0.2.0",
+# Full two-stage high-fidelity profile: Qwen-Image-2512 Lightning + DiffSynth
+# Canny ControlNet for the frame, then SAM-masked Z-Image Turbo face repair.
+# CUDA-only and intentionally separate from the normal diffusion extra because the
+# additional model stack and DiffSynth runtime are large.
+qwen-zimage = [
+    "remove-ai-watermarks[diffusion]",
+    "diffsynth>=2.0.17,<3",
+    # Chroma1-HD ships a binary spiece.model. Without the matching backend,
+    # Transformers falls through to tiktoken, which cannot parse that file.
+    "sentencepiece>=0.2.2,<0.3",
+    "torchvision>=0.20.0",
+]
+# Opt-in verified-text reconstruction over qwen-zimage. LaMa removes the changed
+# candidate glyphs before exact Qwen-VAE cores are composited back.
+text-restoration = [
+    "remove-ai-watermarks[qwen-zimage,lama]",
+]
+# Draft-only OCR proposals for verified-text manifests. CPU, no torch:
+# PaddleOCR detection plus three script-chosen recognition engines. The models
+# download on first use and are cached by huggingface_hub; never bundled.
+text-draft = [
+    "paddleocr>=3.3.3",
+    "paddlepaddle>=3.0.0",
+    "huggingface-hub>=0.20.0",
 ]
 # Adobe TrustMark decoder -- the open, keyless watermark behind Adobe Durable
 # Content Credentials (soft-binding alg ``com.adobe.trustmark.P``). Optional
 # because it pulls torch and downloads model weights on first use. identify()
 # guards the import and skips the TrustMark signal when absent.
 trustmark = [
-    "trustmark>=0.8.0",
+    # TrustMark requires NumPy <2, whose last release has no CPython 3.13+
+    # wheels. Keep this feature installable only on its real runtime range.
+    "trustmark>=0.8.0; python_version < '3.13'",
+]
+# Metadata-free photo classifier (Model 1 then gated Model 2). CPU torch is
+# enough. identify never imports this extra. Weights download on first use.
+classify = [
+    "remove-ai-watermarks[pixels]",
+    "torch>=2.0.0",
+    "transformers>=5,<6",
+    "tokenizers>=0.22,<0.23",
+    "huggingface-hub>=0.20.0",
 ]
 # Universal region eraser backend -- big-LaMa via onnxruntime (Carve/LaMa-ONNX,
 # Apache-2.0). CPU, no torch. Model (~200 MB) is downloaded on first use and
 # cached by huggingface_hub; it is never bundled in this repo. The default cv2
 # eraser backend needs none of this.
 lama = [
-    "onnxruntime>=1.16.0",
+    "remove-ai-watermarks[visible]",
+    "onnxruntime>=1.24.0",
     "huggingface-hub>=0.20.0",
 ]
-# Optional pre-diffusion super-resolution for small inputs (Real-ESRGAN). Loaded via
-# spandrel (MIT) -- a pure model-loader with NO basicsr dependency (it pulls only
-# torch / torchvision / safetensors / numpy / einops).
-# The Real-ESRGAN weights (BSD-3-Clause) download on first use and are cached; they
-# are never bundled. CPU works but is slow on large inputs -- it is meant for the
-# pre-diffusion upscale of SMALL inputs (and the GPU worker). Guarded by
-# upscaler.is_available(); the default upscaler stays Lanczos (cv2, no deps). The
-# weights are fetched with torch.hub (bundled with spandrel's torch), so no extra
-# download dependency is needed.
-esrgan = [
-    "spandrel>=0.3.0",
+# Lightweight inpaint backend -- MI-GAN via onnxruntime (andraniksargsyan/migan,
+# MIT). CPU, no torch. Model (~28 MB) downloaded on first use and cached by
+# huggingface_hub; never bundled. ~700-950 MB peak RAM / ~0.19 s/call -- the
+# memory-tight learned tier (vs big-LaMa's ~4.7 GB). Select it explicitly when
+# LaMa, the quality-first `auto` choice, is too large. Same runtime as `lama`.
+migan = [
+    "remove-ai-watermarks[visible]",
+    "onnxruntime>=1.24.0",
+    "huggingface-hub>=0.20.0",
 ]
 dev = [
+    "remove-ai-watermarks[video]",
+    "remove-ai-watermarks[detect]",
+    # Development-only OpenAI Content Provenance oracle. It is not exposed by
+    # the installed CLI or the public Python API.
+    "openai>=2.52.0",
+    # Development-only local AudioSeal audio watermark oracle for the
+    # scripts/audioseal_experiment.py provenance study. Not part of the
+    # installed CLI, the public Python API, or any runtime pipeline.
+    "audioseal>=0.2.0",
+    "huggingface-hub>=0.20.0",
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
+    "packaging>=24.0",
     "ruff>=0.4.0",
     "pyright>=1.1.0",
     "invisible-watermark>=0.2.0",
-    # maintain.sh helpers; they only support newer Pythons, so gate them by
-    # marker to keep the py3.10 resolution (and CI matrix) solvable.
-    "uv-outdated>=0.1.0; python_version >= '3.12'",
-    "uv-secure>=0.12.0; python_version >= '3.12'",
 ]
-all = ["remove-ai-watermarks[gpu,detect,trustmark,lama,dev]"]
-
-# PyTorch Intel-GPU (XPU) wheel index. ``explicit = true`` keeps it inert for
-# the default CPU/CUDA install: uv consults it only when a torch install
-# explicitly targets it (see the ``gpu`` extra comment), so it does not alter
-# the locked CPU/CUDA resolution. Linux/Windows only -- no macOS XPU build.
-[[tool.uv.index]]
-name = "pytorch-xpu"
-url = "https://download.pytorch.org/whl/xpu"
-explicit = true
+# ``qwen-zimage`` already pulls ``diffusion``; naming both would suggest diffusion is
+# independently sufficient for a removal, which it is not.
+all = ["remove-ai-watermarks[video,heif,detect,trustmark,text-restoration,migan,classify]"]
 
 [project.scripts]
 remove-ai-watermarks = "remove_ai_watermarks.cli:main"
@@ -154,21 +210,31 @@ build-backend = "hatchling.build"
 packages = ["src/remove_ai_watermarks"]
 
 [tool.hatch.build.targets.sdist]
-# Keep the source distribution small: ship the package + metadata, not the
-# committed test corpora / calibration captures under data/ (tens of MB --
-# synthid_corpus images + the visible-mark captures), which pushed the 0.8.0
-# sdist past PyPI's per-project file-size limit (the wheel ships only src/).
-exclude = ["/data"]
+# Keep the source distribution small and public-safe: ship tracked source and
+# metadata, not corpora or local research/session artifacts. The wheel ships
+# only src/.
+include = [
+    "/src",
+    "/LICENSE",
+    "/README.md",
+    "/pyproject.toml",
+]
+exclude = [
+    "/data",
+    "/tmp",
+    "/.sc",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "scripts"]
 addopts = "-v --tb=short"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
-exclude = ["_refs"]
+exclude = ["_refs", ".local-eval"]
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "S", "UP", "SIM", "RET", "COM", "C4", "G", "PT", "PIE", "T20", "DTZ", "ICN", "TCH", "RUF", "ANN"]
@@ -178,18 +244,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"scripts/**/*.py" = ["G004", "S108", "S310", "T20"]
 "tests/*.py" = ["ANN", "S101", "S105", "S106", "S108"]
-"src/remove_ai_watermarks/noai/watermark_remover.py" = ["S603", "S606", "S607", "T201"]  # subprocess calls for auto-install/CUDA fix
-"src/remove_ai_watermarks/noai/c2pa.py" = ["S110"]  # try-except-pass for corrupt file handling
+"src/remove_ai_watermarks/_internal/watermark_remover.py" = ["S603", "S606", "S607"]  # nvidia-smi capability probe
+"src/remove_ai_watermarks/_internal/c2pa.py" = ["S110"]  # try-except-pass for corrupt file handling
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 typeCheckingMode = "strict"
-exclude = ["_refs"]
+exclude = ["_refs", ".local-eval"]
 
 [[tool.pyright.executionEnvironments]]
 root = "tests"

@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+tmp/
+.sc/
 
 # Environment secrets
 .env
@@ -18,8 +20,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# SynthID corpus reference fills (synthetic black/white calibration tiles,
-# regenerable; the labeled pos/neg/cleaned images ARE tracked, see README)
+# Generated calibration inputs
 data/synthid_corpus/refs/
 
 # Reference materials
@@ -29,15 +30,15 @@ _refs/
 yolov8n.pt
 .coverage
 
+# Local prototype and evaluation outputs (scripts/chroma_scrub_prototype.py and
+# friends); the durable record of an oracle verdict lives under data/evaluations/
+out/
+
 # Claude Code local settings
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
-# Visible-watermark alpha calibration. The solid black/gray/white CAPTURES are
-# committed (content-free: a solid colour + the watermark; the source for
-# scripts/visible_alpha_solve.py so the alpha assets are reproducible). The
-# synthetic seeds (regenerable) and any real-content validation download (a real
-# generated scene, kept local for privacy) are NOT committed.
+# Generated calibration inputs and local evaluation artifacts
 data/doubao_capture/seeds/
 data/jimeng_capture/seeds/
 data/jimeng_capture/captures/jimeng_content_*.png
@@ -46,7 +47,18 @@ data/gemini_capture/captures/gemini_content_*.png
 data/samsung_capture/seeds/
 data/samsung_capture/captures/samsung_content_*
 
-# Leftover GFPGAN weights dir from the retired face-restore experiments
-# (GFPGAN wrote RetinaFace/parsing weights to a CWD ./gfpgan/weights/ working
-# dir on first use). Runtime artifact, never committed.
+# Runtime model artifacts
 gfpgan/
+
+# Local evaluation data
+.local-eval/
+
+# Other harnesses' generated config. Claude's sync owns these; a committed copy
+# is a second source nobody reconciles. Anchored so a same-named source file
+# deeper in the tree is not caught.
+/.agents/
+/.codex/
+/sch_*.yaml
+/.opencode/
+/opencode.json
+/opencode.jsonc
